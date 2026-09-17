@@ -8,7 +8,7 @@ export default defineConfig({
     proxy: {
       // Employee login + attendance data both come from the main HRMS
       // server (server/), this app has no backend of its own.
-      "/api": "http://localhost:5000"
+      "/api": "http://localhost:3030"
     }
   }
 });

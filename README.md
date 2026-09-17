@@ -21,7 +21,7 @@ cp .env.example .env   # fill SQL_* and MONGO_URI
 npm run dev
 ```
 
-Runs on `http://localhost:5000`. Syncs COSEC attendance into MongoDB on start and every 5 minutes via cron.
+Runs on `http://localhost:3030`. Syncs COSEC attendance into MongoDB on start and every 5 minutes via cron.
 
 ### Client
 

@@ -648,6 +648,276 @@ button {
   border-color: var(--accent-strong);
 }
 
+/* ---------- leave application ---------- */
+
+.leave-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.leave-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: end;
+}
+
+.leave-form .field-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 14px;
+  color-scheme: dark;
+}
+
+.leave-form .field-input:disabled {
+  opacity: 0.55;
+}
+
+.leave-reason {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.leave-halfday {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.leave-halfday input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.leave-message {
+  margin-top: 0;
+}
+
+.leave-success {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--good-soft);
+  color: var(--good);
+  font-size: 13px;
+}
+
+.leave-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.leave-days {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.leave-days strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.leave-submit {
+  padding: 10px 20px;
+  font-size: 13px;
+}
+
+.leave-submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.leave-history {
+  margin-top: 20px;
+}
+
+.leave-history .log-table tbody td {
+  font-family: inherit;
+  text-align: left;
+}
+
+.leave-history .log-table thead th {
+  text-align: left;
+}
+
+.leave-history .log-table .mono {
+  font-family: var(--font-mono);
+}
+
+.leave-reason-cell {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leave-status {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.leave-status-pending {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.leave-status-approved {
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.leave-status-rejected {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+@media (max-width: 600px) {
+  .leave-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .leave-submit {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ---------- attendance calendar ---------- */
+
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cal-header .btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cal-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.cal-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.cal-legend {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cal-legend-present {
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.cal-legend-absent {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.cal-legend-off {
+  background: var(--ink-800);
+  color: var(--text-muted);
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  transition: opacity 0.15s ease;
+}
+
+.cal-loading {
+  opacity: 0.5;
+}
+
+.cal-weekday {
+  padding: 4px 0;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.cal-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 68px;
+  padding: 8px;
+  border: 1px solid var(--ink-border);
+  border-radius: 8px;
+  background: var(--ink-850);
+}
+
+.cal-cell-empty {
+  border-color: transparent;
+  background: transparent;
+}
+
+.cal-day {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cal-present {
+  background: var(--good-soft);
+  border-color: rgba(52, 211, 153, 0.35);
+}
+
+.cal-present .cal-day,
+.cal-times {
+  color: var(--good);
+}
+
+.cal-times {
+  font-size: 11px;
+}
+
+.cal-absent {
+  background: var(--bad-soft);
+  border-color: rgba(239, 91, 91, 0.35);
+}
+
+.cal-mark {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--bad);
+}
+
+.cal-off {
+  background: var(--ink-800);
+  color: var(--text-faint);
+}
+
+.cal-future {
+  color: var(--text-faint);
+}
+
+.cal-today {
+  border: 2px solid var(--accent);
+}
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 768px) {
@@ -741,5 +1011,20 @@ button {
 @media (max-width: 480px) {
   .scan-card {
     padding: 28px 20px 24px;
+  }
+}
+
+@media (max-width: 600px) {
+  .cal-grid {
+    gap: 4px;
+  }
+
+  .cal-cell {
+    min-height: 48px;
+    padding: 4px;
+  }
+
+  .cal-times {
+    display: none;
   }
 }

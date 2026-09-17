@@ -7,10 +7,7 @@ const LEAVE_ITEMS = [
 ];
 
 const ATTENDANCE_ITEMS = [
-  { key: "attendance-today", label: "Today" },
-  { key: "attendance-week", label: "This Week" },
-  { key: "attendance-month", label: "This Month" },
-  { key: "attendance-history", label: "Full History" }
+  { key: "attendance-calendar", label: "Calendar" }
 ];
 
 function SidebarSection({ label, items, activeKey, onSelect }) {

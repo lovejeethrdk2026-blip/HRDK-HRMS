@@ -2,9 +2,10 @@ import { useState } from "react";
 import Sidebar from "./Sidebar";
 import Login from "./Login";
 import Home from "./Home";
-import AttendanceHistory from "./AttendanceHistory";
+import AttendanceCalendar from "./AttendanceCalendar";
 import Placeholder from "./Placeholder";
 import Document from "./Document";
+import LeaveApplication from "./LeaveApplication";
 
 function Page({ page, employee }) {
   const employeeId = employee.employeeId;
@@ -17,19 +18,13 @@ function Page({ page, employee }) {
     case "me":
       return <Placeholder title="Me" note="Coming soon." />;
     case "leave-application":
-      return <Placeholder title="Leave Application" note="Apply for leave here soon." />;
+      return <LeaveApplication employee={employee} />;
     case "leave-approval":
       return <Placeholder title="Leave Approval" note="Manage leave approvals here soon." />;
     case "leave-balance":
       return <Placeholder title="Leave Balance" note="Your leave balance is coming soon." />;
-    case "attendance-today":
-      return <AttendanceHistory employeeId={employeeId} range="today" />;
-    case "attendance-week":
-      return <AttendanceHistory employeeId={employeeId} range="week" />;
-    case "attendance-month":
-      return <AttendanceHistory employeeId={employeeId} range="month" />;
-    case "attendance-history":
-      return <AttendanceHistory employeeId={employeeId} range="all" />;
+    case "attendance-calendar":
+      return <AttendanceCalendar employeeId={employeeId} />;
     case "payroll":
       return <Placeholder title="Payroll" note="Your salary slip is coming soon." />;
     case "document":

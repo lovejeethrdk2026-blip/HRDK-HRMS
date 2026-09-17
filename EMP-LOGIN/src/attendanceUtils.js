@@ -7,20 +7,9 @@ export function pairNumbers(doc) {
     .sort((a, b) => a - b);
 }
 
-// doc.Date is "DD-MM-YYYY".
-export function parseDisplayDate(displayDate) {
-  const [d, m, y] = displayDate.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d));
-}
-
 export function todayIso() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
     now.getDate()
   ).padStart(2, "0")}`;
-}
-
-export function currentMonthIso() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
