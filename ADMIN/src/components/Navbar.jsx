@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useAuth } from "../auth/AuthContext";
 
 const MENU = [
   { key: "dashboard", label: "Dashboard" },
@@ -12,7 +13,8 @@ const MENU = [
       { key: "leaveApproval", label: "Leave Approval" },
       { key: "leaveBalance", label: "Leave Balance" }
     ]
-  }
+  },
+  { key: "adminUsers", label: "Admin Users" }
 ];
 
 function NavDropdown({ label, items, page, onNavigate }) {
@@ -75,6 +77,9 @@ function NavDropdown({ label, items, page, onNavigate }) {
 }
 
 export default function Navbar({ page, onNavigate }) {
+  const { admin, logout } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
+
   return (
     <nav className="navbar">
       <span className="navbar-brand">HRMS</span>
@@ -98,6 +103,20 @@ export default function Navbar({ page, onNavigate }) {
             </button>
           )
         )}
+
+        <div className="navbar-user">
+          <span className="navbar-user-name">{admin?.name || admin?.username}</span>
+          <button
+            className="navbar-link"
+            disabled={loggingOut}
+            onClick={() => {
+              setLoggingOut(true);
+              logout();
+            }}
+          >
+            {loggingOut ? "Logging out…" : "Logout"}
+          </button>
+        </div>
       </div>
     </nav>
   );

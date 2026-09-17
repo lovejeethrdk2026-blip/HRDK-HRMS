@@ -23,6 +23,29 @@ npm run dev
 
 Runs on `http://localhost:3030`. Syncs COSEC attendance into MongoDB on start and every 5 minutes via cron.
 
+### Admin login
+
+The admin app (`ADMIN/`) requires signing in. `server/.env` needs `JWT_ACCESS_SECRET` (the server won't start without it):
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+```
+
+Create an admin (password is prompted, hidden). Running it again for an existing username resets that password and logs the admin out everywhere:
+
+```bash
+cd server
+npm run create-admin -- admin "Admin Name"
+```
+
+How it works:
+
+- `POST /api/admin/auth/login` returns a short-lived access token (JWT, `ACCESS_TOKEN_TTL`, default 15m) and sets an httpOnly refresh-token cookie (`REFRESH_TOKEN_DAYS`, default 7) scoped to `/api/admin/auth`.
+- The admin app keeps the access token in memory only. On a 401 it calls `POST /api/admin/auth/refresh`, which rotates the refresh token (single-use, stored hashed) and retries the request. Reusing an old refresh token logs that admin out of every session.
+- `POST /api/admin/auth/logout` revokes the refresh token. 5 wrong passwords lock the account for 15 minutes.
+- More admins are added from the **Admin Users** page (`/api/admin/users`): create, disable/enable, reset password. Every admin has the same access. Nobody can disable their own account or the last active admin. Disabling an admin or resetting their password signs them out immediately.
+- Admin-only: `GET /api/attendance/latest`, `GET /api/attendance` and `GET /api/leave` without `employeeId`, `PATCH /api/leave/:id/status`. Calls scoped to one `employeeId` stay open for the employee portal (`EMP-LOGIN/`).
+
 ### Client
 
 ```bash
