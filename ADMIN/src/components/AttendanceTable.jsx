@@ -1,13 +1,26 @@
 import { Fragment } from "react";
+import {
+  FULL_DAY_HOURS,
+  pairsOf,
+  punchCount,
+  lunchText,
+  lunchRange,
+  totalWorkingText,
+  vsFullDayText
+} from "../utils/attendanceStats";
 
-const PAIR_KEY = /^pair(\d+)$/;
+// Some days have dozens of punches (someone passing a reader all day long);
+// showing every pair would stretch the table to 100+ columns. Only the first
+// MAX_PAIR_COLUMNS pairs get columns, the rest is summarised as "+N punches".
+// The Excel export still contains every pair.
+const MAX_PAIR_COLUMNS = 8;
 
-function pairNumbers(doc) {
-  return Object.keys(doc)
-    .filter((key) => PAIR_KEY.test(key))
-    .map((key) => Number(key.match(PAIR_KEY)[1]))
-    .sort((a, b) => a - b);
-}
+// Action column choices (saved per employee-day via PUT /api/attendance/mark).
+const MARKS = [
+  { value: "P", title: "Present", className: "mark-btn-p" },
+  { value: "A", title: "Absent", className: "mark-btn-a" },
+  { value: "H/D", title: "Half day", className: "mark-btn-hd" }
+];
 
 // Matches the "DD-MM-YYYY" format the backend stores Date as.
 function todayDisplayDate() {
@@ -17,32 +30,130 @@ function todayDisplayDate() {
   return `${dd}-${mm}-${now.getFullYear()}`;
 }
 
-export default function AttendanceTable({ records }) {
+export function rowKey(doc) {
+  return `${doc.ID}|${doc.Date}`;
+}
+
+// hideName: drop the Name column when the page already shows the (single)
+// employee's name above the table.
+// onMark(doc, status): when given, an Action column lets the admin mark each
+// row P / A / H/D (clicking the active one clears it). savingKey is the
+// rowKey of the row whose mark is being saved right now.
+// register: the Daily Register's slim layout -- employee ID, name, department, section,
+// total punches, lunch break, total working (and how it compares with a full
+// day) and punch times only (the Date column too when rows span
+// several days).
+export default function AttendanceTable({
+  records,
+  hideName = false,
+  onMark,
+  savingKey = "",
+  register = false,
+  status = false
+}) {
   if (!records.length) {
     return <p className="state-panel">No attendance records found.</p>;
   }
 
-  const maxPairs = Math.max(...records.map((doc) => Math.max(0, ...pairNumbers(doc))));
-  const pairCols = Array.from({ length: maxPairs }, (_, i) => i + 1);
+  const showDate = !register || records.some((doc) => doc.Date !== records[0].Date);
+
+  const maxPairs = Math.max(...records.map((doc) => pairsOf(doc).length));
+  const hasMore = maxPairs > MAX_PAIR_COLUMNS;
+  const pairCols = Array.from({ length: Math.min(maxPairs, MAX_PAIR_COLUMNS) }, (_, i) => i + 1);
+
+  // IN/OUT values in the pairs beyond the shown columns.
+  function extraPunches(doc) {
+    return pairsOf(doc)
+      .slice(MAX_PAIR_COLUMNS)
+      .reduce((sum, pair) => sum + (pair.IN ? 1 : 0) + (pair.OUT ? 1 : 0), 0);
+  }
   const today = todayDisplayDate();
 
   return (
     <div className="table-scroll">
-      <table className="att-table">
+      <table className={`att-table ${hideName ? "att-table-no-name" : ""}`}>
         <thead>
           <tr>
             <th rowSpan={2} className="col-emp">
               Employee ID
             </th>
-            <th rowSpan={2} className="col-name">
-              Name
-            </th>
-            <th rowSpan={2}>Date</th>
+            {!hideName && (
+              <th rowSpan={2} className="col-name">
+                Name
+              </th>
+            )}
+            {register && (
+              <th rowSpan={2} className="col-name">
+                Department
+              </th>
+            )}
+            {register && (
+              <th rowSpan={2} className="col-name" title="COSEC Section (sub-department)">
+                Section
+              </th>
+            )}
+            {status && (
+              <th rowSpan={2} className="col-status" title="Active, or Left (inactive in the COSEC master or has a leaving date)">
+                Status
+              </th>
+            )}
+            {showDate && <th rowSpan={2}>Date</th>}
+            {register && (
+              <>
+                <th rowSpan={2} className="col-punches" title="Every IN and OUT punch recorded that day">
+                  Total Punches
+                </th>
+                <th
+                  rowSpan={2}
+                  className="col-lunch"
+                  title="How long the time out (OUT punch to the next IN) touching 13:00-15:00 was; hover a cell for its times"
+                >
+                  Lunch Break (13:00–15:00)
+                </th>
+                <th rowSpan={2} className="col-total" title="Sum of every completed IN → OUT pair">
+                  Total Working
+                </th>
+                <th
+                  rowSpan={2}
+                  className="col-total"
+                  title={`Total Working against a ${FULL_DAY_HOURS}-hour day: + extra, - short`}
+                >
+                  vs {FULL_DAY_HOURS} Hours
+                </th>
+              </>
+            )}
             {pairCols.map((n) => (
               <th key={n} colSpan={2}>
                 Pair {n}
               </th>
             ))}
+            {hasMore && (
+              <th rowSpan={2} className="col-more" title="Every punch is included in the Excel export">
+                More
+              </th>
+            )}
+            {!register && (
+              <>
+                <th rowSpan={2} className="col-punches" title="Every IN and OUT punch recorded that day">
+                  Punches
+                </th>
+                <th
+                  rowSpan={2}
+                  className="col-lunch"
+                  title="Time out (OUT punch to the next IN) that touches 13:00-15:00"
+                >
+                  Lunch (13:00–15:00)
+                </th>
+                <th rowSpan={2} className="col-total" title="Sum of every completed IN → OUT pair">
+                  Total Working
+                </th>
+              </>
+            )}
+            {onMark && (
+              <th rowSpan={2} className="col-action">
+                Action
+              </th>
+            )}
           </tr>
           <tr>
             {pairCols.map((n) => (
@@ -54,25 +165,106 @@ export default function AttendanceTable({ records }) {
           </tr>
         </thead>
         <tbody>
-          {records.map((doc) => (
-            <tr
-              key={doc._id || `${doc.ID}-${doc.Date}`}
-              className={doc.Date === today ? "present-today" : ""}
-            >
-              <td className="col-emp">{doc.ID}</td>
-              <td className="col-name">{doc.NAME}</td>
-              <td>{doc.Date}</td>
-              {pairCols.map((n) => {
-                const pair = doc[`pair${n}`];
-                return (
-                  <Fragment key={n}>
-                    <td className={pair?.IN ? "" : "punch-empty"}>{pair?.IN || "–"}</td>
-                    <td className={pair?.OUT ? "" : "punch-empty"}>{pair?.OUT || "–"}</td>
-                  </Fragment>
-                );
-              })}
-            </tr>
-          ))}
+          {records.map((doc) => {
+            const lunch = lunchText(doc);
+            const total = totalWorkingText(doc);
+            const punches = punchCount(doc);
+            const vsFullDay = register ? vsFullDayText(doc) : "";
+            return (
+              <tr
+                key={doc._id || `${doc.ID}-${doc.Date}`}
+                className={doc.Date === today ? "present-today" : ""}
+              >
+                <td className="col-emp">
+                  {doc.ID}
+                  {doc.nightShift && (
+                    <span className="pill pill-accent pill-night" title="Night shift: punches counted 12:00 noon to 12:00 noon">
+                      Night
+                    </span>
+                  )}
+                </td>
+                {!hideName && <td className="col-name">{doc.NAME}</td>}
+                {register && <td className="col-name">{doc.department || "–"}</td>}
+                {register && <td className="col-name">{doc.subDepartment || "–"}</td>}
+                {status && (
+                  <td className="col-status">
+                    {doc.status ? (
+                      <span
+                        className={`pill ${doc.status === "Left" ? "pill-left" : "pill-good"}`}
+                        title={doc.status === "Left" && doc.leavingDate ? `Left on ${doc.leavingDate}` : undefined}
+                      >
+                        {doc.status}
+                      </span>
+                    ) : (
+                      "–"
+                    )}
+                  </td>
+                )}
+                {showDate && <td>{doc.Date}</td>}
+                {register && (
+                  <>
+                    <td className={`col-punches ${punches ? "" : "punch-empty"}`}>{punches}</td>
+                    <td className={`col-lunch ${lunch ? "" : "punch-empty"}`} title={lunchRange(doc)}>
+                      {lunch || "–"}
+                    </td>
+                    <td className={`col-total ${total ? "" : "punch-empty"}`}>{total || "–"}</td>
+                    <td
+                      className={`col-total ${
+                        vsFullDay.startsWith("-") ? "hours-short" : vsFullDay.startsWith("+") ? "hours-extra" : ""
+                      } ${vsFullDay ? "" : "punch-empty"}`}
+                    >
+                      {vsFullDay || "–"}
+                    </td>
+                  </>
+                )}
+                {pairCols.map((n) => {
+                  const pair = doc[`pair${n}`];
+                  return (
+                    <Fragment key={n}>
+                      <td className={pair?.IN ? "" : "punch-empty"}>{pair?.IN || "–"}</td>
+                      <td className={pair?.OUT ? "" : "punch-empty"}>{pair?.OUT || "–"}</td>
+                    </Fragment>
+                  );
+                })}
+                {hasMore && (
+                  <td className="col-more">
+                    {extraPunches(doc) ? `+${extraPunches(doc)} punches` : "–"}
+                  </td>
+                )}
+                {!register && (
+                  <>
+                    <td className={`col-punches ${punches ? "" : "punch-empty"}`}>{punches}</td>
+                    <td className={`col-lunch ${lunch ? "" : "punch-empty"}`} title={lunchRange(doc)}>
+                      {lunch || "–"}
+                    </td>
+                    <td className={`col-total ${total ? "" : "punch-empty"}`}>{total || "–"}</td>
+                  </>
+                )}
+                {onMark && (
+                  <td className="col-action">
+                    <div className="mark-group" role="group" aria-label="Mark attendance">
+                      {MARKS.map((mark) => {
+                        const active = doc.mark === mark.value;
+                        return (
+                          <button
+                            key={mark.value}
+                            type="button"
+                            title={mark.title}
+                            aria-pressed={active}
+                            className={`mark-btn ${mark.className} ${active ? "active" : ""}`}
+                            disabled={savingKey === rowKey(doc)}
+                            onClick={() => onMark(doc, active ? "" : mark.value)}
+                          >
+                            {mark.value}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </td>
+                )}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

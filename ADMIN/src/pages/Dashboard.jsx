@@ -1,95 +1,203 @@
 import { useEffect, useState } from "react";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import api from "../api/axios";
+import { useAuth } from "../auth/AuthContext";
+import { isActive } from "../utils/employeeStatus";
+import LivePunches from "../components/LivePunches";
 
-const PAIR_KEY = /^pair(\d+)$/;
+// Dashboard: opens after login. Shows the total employees, from
+// GET /api/employees, today's IN / OUT punches (components/LivePunches.jsx),
+// and a chart of how many punched each day, from the Daily Register head
+// count (GET /api/attendance/headcount).
 
-function todayDisplayDate() {
+const TEAL = "#00918a"; // FinancialCharts.jsx PALETTE[0]
+const MUTED = "#3f5c54"; // --text-muted
+const GRID = "#e3efe5"; // --row-line
+const PERIODS = [7, 30, 90]; // days the chart can show
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const pad = (n) => String(n).padStart(2, "0");
+const ddmmyyyy = (d) => `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
+// Financial year a day falls in: April onwards belongs to that year.
+const fyOf = (d) => (d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1);
+
+// The last `count` days, oldest first, today last.
+function lastDays(count) {
   const now = new Date();
-  const dd = String(now.getDate()).padStart(2, "0");
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  return `${dd}-${mm}-${now.getFullYear()}`;
+  return Array.from({ length: count }, (_, i) => new Date(now.getFullYear(), now.getMonth(), now.getDate() - (count - 1 - i)));
 }
 
-function lastPair(doc) {
-  const nums = Object.keys(doc)
-    .filter((key) => PAIR_KEY.test(key))
-    .map((key) => Number(key.match(PAIR_KEY)[1]))
-    .sort((a, b) => b - a);
+// Every day of financial year `fy` (1 April fy .. 31 March fy+1), up to today.
+function fyDays(fy) {
+  const today = new Date();
+  const days = [];
+  for (let d = new Date(fy, 3, 1); d <= today && d < new Date(fy + 1, 3, 1); d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+    days.push(d);
+  }
+  return days;
+}
 
-  return nums.length ? doc[`pair${nums[0]}`] : null;
+const fyLabel = (fy) => `FY ${fy}-${String(fy + 1).slice(2)}`;
+
+// Days present per day: a line over the last 7 / 30 / 90 days, or a whole
+// financial year ("fy2026").
+function AttendanceChart() {
+  const [period, setPeriod] = useState("30");
+  const [counts, setCounts] = useState(null); // "DD-MM-YYYY" -> head count
+  const [error, setError] = useState("");
+  const currentFy = fyOf(new Date());
+  const days = period.startsWith("fy") ? fyDays(Number(period.slice(2))) : lastDays(Number(period));
+
+  // The days may cross 1 April, so ask for every financial year they touch.
+  const years = [...new Set(days.map(fyOf))].join(",");
+  useEffect(() => {
+    let cancelled = false;
+    setError("");
+    Promise.all(years.split(",").map((fy) => api.get("/attendance/headcount", { params: { fy } })))
+      .then((replies) => !cancelled && setCounts(Object.assign({}, ...replies.map(({ data }) => data.counts || {}))))
+      .catch((err) => !cancelled && setError(err.response?.data?.message || err.message));
+    return () => {
+      cancelled = true;
+    };
+  }, [years]);
+
+  const rows = days.map((day) => {
+    const date = ddmmyyyy(day);
+    return { date, label: `${pad(day.getDate())}/${pad(day.getMonth() + 1)}`, present: counts?.[date] ?? 0 };
+  });
+  // A financial year: one tick per month (its 1st), shown as "Apr", "May", ...
+  const yearView = days.length > 120;
+  const monthTicks = yearView ? rows.filter((row) => row.label.startsWith("01/")).map((row) => row.label) : undefined;
+  const worked = rows.filter((row) => row.present);
+  const average = worked.length ? Math.round(worked.reduce((sum, row) => sum + row.present, 0) / worked.length) : 0;
+
+  return (
+    <section className="card">
+      <div className="dash-chart-head">
+        <div>
+          <h3 className="card-title">Attendance</h3>
+          <p className="kpi-sub">
+            Employees who punched each day
+            {worked.length ? ` · average ${average} over ${worked.length} working days` : ""}
+          </p>
+        </div>
+        <select aria-label="Days shown" value={period} onChange={(e) => setPeriod(e.target.value)}>
+          {PERIODS.map((n) => (
+            <option key={n} value={String(n)}>
+              Last {n} days
+            </option>
+          ))}
+          {[currentFy, currentFy - 1].map((fy) => (
+            <option key={fy} value={`fy${fy}`}>
+              {fyLabel(fy)}
+            </option>
+          ))}
+        </select>
+      </div>
+      {error ? (
+        <p className="state-panel">Could not load attendance: {error}</p>
+      ) : !counts ? (
+        <p className="state-panel">Loading attendance…</p>
+      ) : (
+        <div className="dash-chart">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={rows} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+              <defs>
+                <linearGradient id="presentFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={TEAL} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={TEAL} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke={GRID} vertical={false} />
+              <XAxis
+                dataKey="label"
+                tick={{ fill: MUTED, fontSize: 11 }}
+                tickLine={false}
+                axisLine={{ stroke: GRID }}
+                interval={yearView ? 0 : "preserveStartEnd"}
+                ticks={monthTicks}
+                tickFormatter={yearView ? (label) => MONTHS[Number(label.slice(3)) - 1] : undefined}
+                minTickGap={12}
+              />
+              <YAxis allowDecimals={false} tick={{ fill: MUTED, fontSize: 11 }} tickLine={false} axisLine={false} />
+              <Tooltip
+                cursor={{ stroke: GRID }}
+                labelFormatter={(_, items) => items?.[0]?.payload.date}
+                formatter={(value) => [value, "Present"]}
+              />
+              <Area
+                isAnimationActive={false}
+                type="monotone"
+                dataKey="present"
+                name="Present"
+                stroke={TEAL}
+                strokeWidth={2}
+                fill="url(#presentFill)"
+                dot={days.length <= 31 ? { r: 2.5, fill: TEAL, strokeWidth: 0 } : false}
+                activeDot={{ r: 4 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </section>
+  );
 }
 
 export default function Dashboard() {
-  const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { user, can } = useAuth();
+  const [employees, setEmployees] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
     api
-      .get("/attendance/latest")
-      .then(({ data }) => setRecords(data))
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .get("/employees")
+      .then(({ data }) => !cancelled && setEmployees(data))
+      .catch((err) => !cancelled && setError(err.response?.data?.message || err.message));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  if (loading) return <p>Loading...</p>;
-  if (error) return <p className="error">{error}</p>;
-
-  const today = todayDisplayDate();
-  const totalEmployees = records.length;
-  const presentToday = records.filter((doc) => doc.Date === today);
-  const clockedInNow = presentToday.filter((doc) => {
-    const pair = lastPair(doc);
-    return pair?.IN && !pair?.OUT;
-  });
+  // "Their department" roles count only employees of the user's own department.
+  // Those who have left (Inactive on the Employees page) are not counted.
+  const ownOnly = user.role !== "admin" && user.employeeScope === "department";
+  const total = (employees || []).filter(
+    (employee) => isActive(employee) && (!ownOnly || employee.department === user.department?.name)
+  ).length;
 
   return (
     <div>
-      <h1>Dashboard</h1>
-
-      <div className="stat-cards">
-        <div className="stat-card">
-          <div className="stat-value">{totalEmployees}</div>
-          <div className="stat-label">Total Employees</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">{presentToday.length}</div>
-          <div className="stat-label">Punched Today ({today})</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">{clockedInNow.length}</div>
-          <div className="stat-label">Currently Clocked In</div>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Dashboard</h1>
         </div>
       </div>
-
-      {presentToday.length > 0 && (
-        <>
-          <h2>Today's Activity</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Employee ID</th>
-                <th>Name</th>
-                <th>Last IN</th>
-                <th>Last OUT</th>
-              </tr>
-            </thead>
-            <tbody>
-              {presentToday.map((doc) => {
-                const pair = lastPair(doc);
-                return (
-                  <tr key={doc._id || doc.ID} className="present-today">
-                    <td>{doc.ID}</td>
-                    <td>{doc.NAME}</td>
-                    <td>{pair?.IN || "--"}</td>
-                    <td>{pair?.OUT || "--"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </>
+      {error ? (
+        <div className="card">
+          <p className="state-panel">Could not load employees: {error}</p>
+        </div>
+      ) : (
+        <div className="kpi-strip">
+          <div className="kpi">
+            <div className="kpi-head">
+              <span>Total employees</span>
+            </div>
+            <div className="kpi-value">{employees ? total : "…"}</div>
+            <p className="kpi-sub">
+              {ownOnly
+                ? user.department?.name || "Your department"
+                : (user.role !== "admin" && user.registerDepartment) || "All departments"}
+            </p>
+            <div className="kpi-rail">
+              <span style={{ width: "100%" }} />
+            </div>
+          </div>
+        </div>
       )}
+      {can("attendance.view") && <LivePunches />}
+      {can("attendance.view") && <AttendanceChart />}
     </div>
   );
 }

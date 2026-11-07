@@ -1,49 +1,110 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { useAuth } from "./auth/AuthContext";
-import Navbar from "./components/Navbar";
+import Loader from "./components/Loader";
+import Sidebar from "./components/Sidebar";
+import TopNav from "./components/TopNav";
 import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import Attendance from "./pages/Attendance";
-import AttendanceMark from "./pages/AttendanceMark";
-import Placeholder from "./pages/Placeholder";
-import LeaveApplications from "./pages/LeaveApplications";
-import EmployeeDetails from "./pages/EmployeeDetails";
-import AdminUsers from "./pages/AdminUsers";
+
+// Each page's code is fetched when it is first opened, so the first screen
+// does not wait for every page (and the Excel / PowerPoint libraries).
+const AddEmployee = lazy(() => import("./pages/AddEmployee"));
+const Attendance = lazy(() => import("./pages/Attendance"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Departments = lazy(() => import("./pages/Departments"));
+const EmpCost = lazy(() => import("./pages/EmpCost"));
+const Employees = lazy(() => import("./pages/Employees"));
+const FinancialSummary = lazy(() => import("./pages/FinancialSummary"));
+const PaySheets = lazy(() => import("./pages/PaySheets"));
+const ReportingChart = lazy(() => import("./pages/ReportingChart"));
+const Roles = lazy(() => import("./pages/Roles"));
+const Users = lazy(() => import("./pages/Users"));
 
 const PAGES = {
-  dashboard: Dashboard,
-  employeeDetails: EmployeeDetails,
-  attendance: Attendance,
-  attendanceMark: AttendanceMark,
-  leaveApplication: () => <LeaveApplications mode="all" />,
-  leaveApproval: () => <LeaveApplications mode="approval" />,
-  leaveBalance: () => (
-    <Placeholder title="Leave Balance" note="Employee leave balances are coming soon." />
-  ),
-  adminUsers: AdminUsers
+  dashboard: Dashboard, // first, so it opens after login
+  attendance: Attendance, // Daily Register: one day, or a month, in detail
+  attendanceAll: (props) => <Attendance view="latest" {...props} />,
+  headCount: (props) => <Attendance view="headcount" {...props} />,
+  nightShift: (props) => <Attendance view="night" {...props} />,
+  employees: Employees,
+  addEmployee: AddEmployee,
+  departments: Departments,
+  reportingChart: ReportingChart,
+  paySheet1: () => <PaySheets sheetKey="paySheet1" />,
+  paySheet2: () => <PaySheets sheetKey="paySheet2" />,
+  paySheet3: () => <PaySheets sheetKey="paySheet3" />,
+  empCost: EmpCost,
+  financialSummary: FinancialSummary,
+  users: Users, // admin only (top-right menu)
+  roles: Roles // admin only (top-right menu)
+};
+
+// The permission each page needs (Roles & Permissions page). "admin": admins only.
+const PAGE_PERMISSION = {
+  dashboard: "employees.view",
+  attendance: "attendance.view",
+  attendanceAll: "attendance.view",
+  headCount: "attendance.view",
+  nightShift: "attendance.view",
+  employees: "employees.view",
+  addEmployee: "employees.add",
+  departments: "departments.view",
+  reportingChart: "employees.view",
+  paySheet1: "paysheet.view",
+  paySheet2: "paysheet.view",
+  paySheet3: "paysheet.view",
+  empCost: "paysheet.reports",
+  financialSummary: "paysheet.reports",
+  users: "admin",
+  roles: "admin"
 };
 
 export default function App() {
-  const { admin, checking } = useAuth();
-  const [page, setPage] = useState("dashboard");
-  const Page = PAGES[page] || Dashboard;
+  const { user, checking, can } = useAuth();
+  const [page, setPage] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false); // menu drawer on narrow screens
+  if (checking) return <Loader text="Loading…" />;
+  if (!user) return <Login />;
 
-  if (checking) {
-    return (
-      <div className="auth-checking">
-        <span className="spinner" aria-hidden="true" /> Checking session…
-      </div>
-    );
+  // May this user open that page?
+  const canOpen = (key) => {
+    const needs = PAGE_PERMISSION[key];
+    if (!needs) return false; // not a page (e.g. "" before anything is picked)
+    return needs === "admin" ? user.role === "admin" : can(needs);
+  };
+
+  // The page asked for, or else the first one this user may open.
+  const current = canOpen(page) ? page : Object.keys(PAGES).find(canOpen);
+  const Page = PAGES[current];
+
+  function navigate(key) {
+    setPage(key);
+    setMenuOpen(false);
+    window.scrollTo(0, 0);
   }
 
-  if (!admin) return <Login />;
-
   return (
-    <>
-      <Navbar page={page} onNavigate={setPage} />
-      <div className="page">
-        <Page />
+    <div className="app-shell">
+      <TopNav page={current} onNavigate={navigate} onMenu={() => setMenuOpen(true)} canOpen={canOpen} />
+      <Sidebar
+        page={current}
+        onNavigate={navigate}
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        canOpen={canOpen}
+      />
+      <div className="app-main">
+        <div className="page">
+          {Page ? (
+            <Suspense fallback={<Loader text="Loading…" />}>
+              <Page onNavigate={navigate} />
+            </Suspense>
+          ) : (
+            <div className="card">
+              <p className="state-panel">Your role has no pages yet. Ask your admin to give it access.</p>
+            </div>
+          )}
+        </div>
       </div>
-    </>
+    </div>
   );
 }

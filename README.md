@@ -5,9 +5,12 @@ MERN app syncing biometric (COSEC / SQL Server) attendance into MongoDB, served 
 ## Structure
 
 ```
-server/       Express + Mongoose + mssql sync job + REST API
-client/       React (Vite) attendance viewer
-empdetails/   Employee self-service login page (client/ only, see Notes)
+server/       Express + Mongoose REST API, one folder per feature:
+  dailyRegister/  /api/attendance: day records, COSEC punch sync, its models
+  paySheet/       /api/paysheets: relay to the Pay Sheet app (BC365)
+  employee/       /api/employees: Add Employee, its model
+  config/ middleware/ utils/   shared by all three
+ADMIN/        React (Vite) admin panel: Employees (Add Employee), Daily Register (attendance) and Pay Sheet
 ```
 
 ## Setup
@@ -21,45 +24,44 @@ cp .env.example .env   # fill SQL_* and MONGO_URI
 npm run dev
 ```
 
-Runs on `http://localhost:3030`. Syncs COSEC attendance into MongoDB on start and every 5 minutes via cron.
+Runs on `http://localhost:3030`. On start and every 5 minutes it builds attendance day records from the COSEC punches (see **COSEC data** below).
 
-### Admin login
+### Access
 
-The admin app (`ADMIN/`) requires signing in. `server/.env` needs `JWT_ACCESS_SECRET` (the server won't start without it):
+There is no sign-in: anyone who can reach the server sees the Daily Register and the Pay Sheet salary data. Run it only on a machine that is not reachable from outside the office.
 
-```bash
-node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
-```
-
-Create an admin (password is prompted, hidden). Running it again for an existing username resets that password and logs the admin out everywhere:
+### Admin app
 
 ```bash
-cd server
-npm run create-admin -- admin "Admin Name"
-```
-
-How it works:
-
-- `POST /api/admin/auth/login` returns a short-lived access token (JWT, `ACCESS_TOKEN_TTL`, default 15m) and sets an httpOnly refresh-token cookie (`REFRESH_TOKEN_DAYS`, default 7) scoped to `/api/admin/auth`.
-- The admin app keeps the access token in memory only. On a 401 it calls `POST /api/admin/auth/refresh`, which rotates the refresh token (single-use, stored hashed) and retries the request. Reusing an old refresh token logs that admin out of every session.
-- `POST /api/admin/auth/logout` revokes the refresh token. 5 wrong passwords lock the account for 15 minutes.
-- More admins are added from the **Admin Users** page (`/api/admin/users`): create, disable/enable, reset password. Every admin has the same access. Nobody can disable their own account or the last active admin. Disabling an admin or resetting their password signs them out immediately.
-- Admin-only: `GET /api/attendance/latest`, `GET /api/attendance` and `GET /api/leave` without `employeeId`, `PATCH /api/leave/:id/status`. Calls scoped to one `employeeId` stay open for the employee portal (`EMP-LOGIN/`).
-
-### Client
-
-```bash
-cd client
+cd ADMIN
 npm install
 npm run dev
 ```
 
 Runs on `http://localhost:5173`, proxies `/api` to the server.
 
+### COSEC data (punches and employee master)
+
+Two databases on the same Atlas cluster, same credentials:
+
+- `MONGO_URI` (`.../hrms`) — this app's own data: `employees` (employee ID, name and department copied from the COSEC master), `attendance_days` (the per-day records the Daily Register shows), `syncstates` (sync progress) and `employee_profiles` (employees added on the Add Employee page, with their joining-sheet details; the sync never touches it).
+- `COSEC_DB_NAME` (default `COSEC-ATTENDANCE`) — written by the external COSEC sync, read-only here: `punches` (one row per reader tap: `employeeId`, `employeeName`, `punchTime`, `punchDirection`) and `employees` (the employee master). Its `attendances` collection belongs to a different application and is not used.
+
+`server/dailyRegister/cosecSync.js` turns raw punches into this app's day records: at startup (a full rebuild the first time) and every `COSEC_SYNC_MINUTES` it re-reads every punch row the external puller has written since `COSEC_SYNC_OVERLAP_MINUTES` before its last run (progress is tracked by `syncedAt`, not `punchTime`, because that puller back-fills history out of order) and rebuilds each day those rows touch from all of its punches. It sorts each employee's punches per wall-clock day, drops taps within `PUNCH_DUPLICATE_SECONDS` of the previous kept one (double taps), pairs the rest as IN, OUT, IN, OUT… and upserts `{ ID, NAME, Date: "DD-MM-YYYY", pair1: { IN, OUT }, … }`. `punchDirection` is 0 on virtually every row, so it is ignored. The same run copies employee ID, name and department from the COSEC employee master into this app's own `employees` collection (`server/dailyRegister/models/Employee.js`), which supplies names and departments for the Daily Register; if the external program's database is reset (it was on 2026-09-23), the copy keeps serving until the master reappears.
+
+Time zone: the external sync stores the reader's IST wall-clock time as if it were UTC, so `PUNCH_TIME_ZONE=UTC` (the default) produces the correct local times. Switch it to `Asia/Kolkata` only if that sync is changed to store real UTC instants.
+
+Sync endpoints: `GET /api/attendance/sync` (last run, settings), `POST /api/attendance/sync` (run now — the **Sync from COSEC** button on the Daily Register page).
+
 ## API
 
-- `GET /api/attendance?employeeId=&date=&from=&to=` — list attendance records
-- `POST /api/attendance/sync` — trigger manual sync from SQL Server
+- `GET /api/attendance?employeeId=&date=&month=&view=register` — attendance records (`view=register`: only ID, name, department, date and punches)
+- `GET /api/attendance/latest?view=register` — each employee's most recent day
+- `GET /api/attendance/range` — first and last day that has records
+- `POST /api/attendance/sync` — build day records from the newest COSEC punches now
+- `GET /api/attendance/sync` — last sync run and settings
+- `POST /api/employees` — add an employee (Add Employee page)
+- `GET /api/paysheets/:sheet?fromDate=&toDate=` — Pay Sheet data from BC365
 - `GET /api/health` — health check
 
 ## Notes
@@ -67,4 +69,3 @@ Runs on `http://localhost:5173`, proxies `/api` to the server.
 - One employee can have multiple IN/OUT pairs per day; `pairNo` disambiguates them in MongoDB, unique per (employeeId, date, pairNo).
 - If COSEC SQL Server is on office LAN, run `server/` on an office machine with SQL access, pointed at MongoDB Atlas. The public-facing HRMS backend only needs MongoDB, not direct SQL Server access.
 - Current IN/OUT pairing assumes punch order (1st=IN, 2nd=OUT, ...). Switch to COSEC's `IOType` column once its IN/OUT values are confirmed, for real punch direction instead of odd/even guessing.
-- `empdetails/client/MyAttendance.jsx` is a deliberately separate, self-contained React file (own `fetch`-based API calls, own table renderer -- no imports from `client/src`), living outside `client/` per request. `client/src/App.jsx` imports it directly via a relative path, and `client/vite.config.js` has `server.fs.allow: [".."]` so Vite can serve a file from outside its project root. The backend side (`EmpDetails` model/controller/route, login = employee ID as both username and password) stays in `server/` as normal -- only the frontend piece is split out. If this pattern is repeated for more pages, keep each such file dependency-free (no importing packages that only exist in `client/node_modules`, since Vite can't resolve `node_modules` sideways into a sibling directory -- use native `fetch` instead of `axios`, as done here).
