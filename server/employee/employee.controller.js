@@ -435,6 +435,91 @@ async function reviseSalary(req, res) {
   res.json(employee.toObject());
 }
 
+// POST /api/employees/bulk-salary-revision  (Employees > Bulk increment)
+// Body { employeeIds: [...], mode: "percent" | "amount", value, roundTo (1, 10
+// or 100), effectiveDate ("DD-MM-YYYY"), remark, dryRun }.
+// Each employee's monthly CTC goes up by value % (or by value rupees; a
+// negative value is a cut), rounded up to roundTo. dryRun: work it out and
+// check, save nothing. Each employee is saved on its own; one failing does not
+// stop the rest. -> { results: [{ employeeId, name, oldCtc, newCtc, ok, message }] }
+async function bulkReviseSalary(req, res) {
+  const body = bodyOf(req);
+  const ids = [...new Set((Array.isArray(body.employeeIds) ? body.employeeIds : []).map((id) => String(id).trim()))].filter(
+    Boolean
+  );
+  const mode = body.mode === "amount" ? "amount" : "percent";
+  const value = Number(body.value);
+  const roundTo = [1, 10, 100].includes(Number(body.roundTo)) ? Number(body.roundTo) : 1;
+  const effectiveDate = String(body.effectiveDate ?? "").trim();
+  const remark = String(body.remark ?? "").trim();
+  const dryRun = Boolean(body.dryRun);
+
+  if (!ids.length) return res.status(400).json({ message: "Pick at least one employee" });
+  if (ids.length > 1000) return res.status(400).json({ message: "At most 1000 employees at once" });
+  if (!Number.isFinite(value) || value === 0) return res.status(400).json({ message: "Increase must be a number, not 0" });
+  if (mode === "percent" && (value <= -100 || value > 500)) {
+    return res.status(400).json({ message: "Percent must be above -100 and at most 500" });
+  }
+  if (!isDate(effectiveDate)) return res.status(400).json({ message: "Effective date must be a date like 01-08-2026" });
+
+  let employees = await EmployeeProfile.find({ employeeId: { $in: ids } });
+  // A user limited to some Daily Register departments may change only those.
+  const scope = await registerScope(req);
+  if (scope) {
+    const scopeIds = new Set(scope.ids);
+    employees = employees.filter((employee) => profileInScope(scope, scopeIds, employee));
+  }
+  const byId = new Map(employees.map((employee) => [employee.employeeId, employee]));
+
+  const results = [];
+  for (const employeeId of ids) {
+    const employee = byId.get(employeeId);
+    if (!employee) {
+      results.push({ employeeId, name: "", oldCtc: null, newCtc: null, ok: false, message: "Not found" });
+      continue;
+    }
+    const oldCtc = payHistoryOf(employee.toObject()).at(-1).monthlyCtc;
+    const row = { employeeId, name: employee.name, oldCtc, newCtc: null, ok: false, message: "" };
+    results.push(row);
+    if (leftMessage(employee)) {
+      row.message = leftMessage(employee);
+      continue;
+    }
+    if (!oldCtc) {
+      row.message = "Has no monthly CTC yet";
+      continue;
+    }
+    const raw = mode === "percent" ? oldCtc * (1 + value / 100) : oldCtc + value;
+    const newCtc = Math.ceil(raw / roundTo) * roundTo;
+    row.newCtc = newCtc;
+    if (newCtc <= 0) {
+      row.message = "New CTC would be 0 or less";
+      continue;
+    }
+    const label = mode === "percent" ? `${value}%` : `${value > 0 ? "+" : ""}${value}`;
+    const problem = startPay(employee, {
+      ctc: newCtc,
+      effectiveDate,
+      kind: "revision",
+      remark: remark ? `Bulk ${label} - ${remark}` : `Bulk ${label}`
+    });
+    if (problem) {
+      row.message = problem;
+      continue;
+    }
+    if (!dryRun) {
+      try {
+        await employee.save();
+      } catch (error) {
+        row.message = error.message;
+        continue;
+      }
+    }
+    row.ok = true;
+  }
+  res.json({ dryRun, results });
+}
+
 // POST /api/employees/:employeeId/transfer  Body { state, city, effectiveDate
 // ("DD-MM-YYYY"), remark }. Ends the current stay the day before, starts the
 // new one, and works the salary split out again for the new state.
@@ -693,6 +778,7 @@ const listEmployeesHandler = asyncHandler(listEmployees);
 const transferEmployeeHandler = asyncHandler(transferEmployee);
 const transferDepartmentHandler = asyncHandler(transferDepartment);
 const reviseSalaryHandler = asyncHandler(reviseSalary);
+const bulkReviseSalaryHandler = asyncHandler(bulkReviseSalary);
 const exitEmployeeHandler = asyncHandler(exitEmployee);
 const rejoinEmployeeHandler = asyncHandler(rejoinEmployee);
 const undoExitHandler = asyncHandler(undoExit);
@@ -705,6 +791,7 @@ export {
   transferEmployeeHandler as transferEmployee,
   transferDepartmentHandler as transferDepartment,
   reviseSalaryHandler as reviseSalary,
+  bulkReviseSalaryHandler as bulkReviseSalary,
   updateEmployeeHandler as updateEmployee,
   listEmployeesHandler as listEmployees
 };

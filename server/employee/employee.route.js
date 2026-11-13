@@ -5,6 +5,7 @@ import {
   listEmployees,
   rejoinEmployee,
   reviseSalary,
+  bulkReviseSalary,
   transferDepartment,
   transferEmployee,
   undoExit,
@@ -13,6 +14,18 @@ import {
 import { getSalarySheet } from "./salarySheet.js";
 import { MAX_DOCUMENT_BYTES, deleteDocument, getDocument, uploadDocument } from "./employeeDocuments.js";
 import { isLoggedIn } from "../middleware/auth.js";
+import { accessFor } from "../roles/roles.controller.js";
+
+// Only a signed-in user whose role has this permission (admins always do).
+const allowed = (permission) => async (req, res, next) => {
+  try {
+    const { permissions } = await accessFor(req.session.role);
+    if (permissions.includes(permission)) return next();
+    res.status(403).json({ message: "You are not allowed to do this" });
+  } catch (error) {
+    next(error);
+  }
+};
 
 const router = express.Router();
 
@@ -30,6 +43,10 @@ router.post("/:employeeId/transfer", transferEmployee);
 router.post("/:employeeId/department-transfer", transferDepartment);
 // Salary revision button on an Employees card: a new CTC with no transfer.
 router.post("/:employeeId/salary-revision", reviseSalary);
+// Employees > Bulk increment: raise many employees' CTC by a % or an amount.
+// Before "/:employeeId/..." routes would not clash, but kept here with the
+// other salary routes. Signed in, with "Salary revision and transfers".
+router.post("/bulk-salary-revision", isLoggedIn, allowed("employees.transfer"), bulkReviseSalary);
 // Exit button on an Employees card: they left (record kept, histories closed).
 router.post("/:employeeId/exit", exitEmployee);
 // Rejoin button on a left employee's card: same code, histories open again.

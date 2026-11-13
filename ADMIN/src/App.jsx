@@ -8,6 +8,7 @@ import Login from "./pages/Login";
 // Each page's code is fetched when it is first opened, so the first screen
 // does not wait for every page (and the Excel / PowerPoint libraries).
 const AddEmployee = lazy(() => import("./pages/AddEmployee"));
+const BulkIncrement = lazy(() => import("./pages/BulkIncrement"));
 const Attendance = lazy(() => import("./pages/Attendance"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Departments = lazy(() => import("./pages/Departments"));
@@ -27,6 +28,7 @@ const PAGES = {
   nightShift: (props) => <Attendance view="night" {...props} />,
   employees: Employees,
   addEmployee: AddEmployee,
+  bulkIncrement: BulkIncrement,
   departments: Departments,
   reportingChart: ReportingChart,
   paySheet1: () => <PaySheets sheetKey="paySheet1" />,
@@ -47,6 +49,7 @@ const PAGE_PERMISSION = {
   nightShift: "attendance.view",
   employees: "employees.view",
   addEmployee: "employees.add",
+  bulkIncrement: "employees.transfer",
   departments: "departments.view",
   reportingChart: "employees.view",
   paySheet1: "paysheet.view",

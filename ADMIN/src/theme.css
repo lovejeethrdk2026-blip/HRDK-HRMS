@@ -6798,3 +6798,535 @@ tbody tr:hover td.ps-sticky {
 .us-user-modal .cp-note {
   padding: 0 24px;
 }
+
+/* ---------- Employees > Bulk increment (pages/BulkIncrement.jsx) ---------- */
+/* Employee list on the left, the Increment panel on the right (sticky). */
+.bi-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+  align-items: start;
+}
+
+.bi-page .error-banner,
+.bi-page .detail-banner {
+  margin-bottom: 14px;
+}
+
+/* fields */
+.bi-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bi-field > label,
+.bi-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.bi-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--card);
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.bi-input:focus-visible {
+  outline: none;
+  border-color: var(--brass);
+  box-shadow: 0 0 0 3px var(--brass-soft);
+}
+
+.bi-input:disabled {
+  background: var(--hover);
+  color: var(--text-faint);
+}
+
+.bi-grow {
+  flex: 1 1 200px;
+}
+
+/* ---- left: list ---- */
+.bi-list {
+  padding: 0;
+  overflow: hidden;
+}
+
+.bi-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--row-line);
+}
+
+.bi-list-head .bi-field:not(.bi-grow) {
+  flex: 1 1 180px;
+}
+
+.bi-list-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 18px;
+  background: var(--hover);
+  border-bottom: 1px solid var(--row-line);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.bi-list-bar strong {
+  color: var(--teal);
+}
+
+.bi-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--teal);
+  cursor: pointer;
+}
+
+.bi-link:hover {
+  text-decoration: underline;
+}
+
+.bi-scroll {
+  max-height: calc(100vh - 290px);
+  min-height: 240px;
+  overflow: auto;
+}
+
+.bi-table {
+  width: 100%;
+}
+
+.bi-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--card);
+}
+
+.bi-table tbody tr {
+  cursor: pointer;
+}
+
+.bi-table tbody tr:hover {
+  background: var(--hover);
+}
+
+.bi-table tbody tr.bi-on {
+  background: var(--teal-soft);
+}
+
+.bi-table td {
+  vertical-align: middle;
+}
+
+.bi-check {
+  width: 44px;
+  text-align: center;
+}
+
+.bi-check input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--teal);
+  cursor: pointer;
+}
+
+.bi-name {
+  display: block;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.bi-dept {
+  display: block;
+  color: var(--text);
+}
+
+.bi-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.bi-empty {
+  padding: 36px 16px;
+  text-align: center;
+  color: var(--text-faint);
+}
+
+.bi-up {
+  color: var(--good);
+  font-weight: 600;
+}
+
+.bi-down {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+/* ---- right: Increment panel ---- */
+.bi-panel {
+  position: sticky;
+  top: 84px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border-top: 4px solid var(--teal);
+}
+
+.bi-panel-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.bi-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--hover);
+}
+
+.bi-toggle button {
+  height: 34px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.bi-toggle button.is-on {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(5, 31, 32, 0.12);
+}
+
+.bi-chips {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.bi-chips button {
+  height: 38px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--card);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.bi-chips button:hover {
+  border-color: var(--teal);
+}
+
+.bi-chips button.is-on {
+  border-color: var(--teal);
+  background: var(--teal);
+  color: #fff;
+}
+
+.bi-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.bi-affix {
+  position: relative;
+}
+
+.bi-affix .bi-input {
+  padding-right: 30px;
+}
+
+.bi-affix span {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  font-size: 14px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.bi-totals {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--hover);
+}
+
+.bi-totals div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 13.5px;
+}
+
+.bi-totals dt {
+  color: var(--text-muted);
+}
+
+.bi-totals dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.bi-totals .bi-total-diff {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-strong);
+  font-size: 15px;
+}
+
+.bi-totals .bi-total-diff dd.bi-up {
+  color: var(--good);
+}
+
+.bi-totals .bi-total-diff dd.bi-down {
+  color: var(--bad);
+}
+
+.bi-apply {
+  width: 100%;
+  height: 44px;
+  justify-content: center;
+  font-size: 14.5px;
+}
+
+.bi-note {
+  margin: -6px 0 0;
+  font-size: 12px;
+  text-align: center;
+  color: var(--text-faint);
+}
+
+.bi-check input:focus-visible,
+.bi-toggle button:focus-visible,
+.bi-chips button:focus-visible,
+.bi-link:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1000px) {
+  .bi-layout {
+    grid-template-columns: 1fr;
+  }
+  .bi-panel {
+    position: static;
+    order: -1;
+  }
+  .bi-scroll {
+    max-height: none;
+  }
+}
+
+.bi-table th,
+.bi-table td {
+  text-align: left;
+}
+
+.bi-table th.st-num,
+.bi-table td.st-num {
+  text-align: right;
+}
+
+.bi-table th.bi-check,
+.bi-table td.bi-check {
+  text-align: center;
+}
+
+.bi-table td.bi-id {
+  width: 90px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Bulk increment: the Increment panel as a bar on top, stuck under the navbar
+   (.tn is 56px), the employee list full width below it. */
+.bi-layout {
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.bi-panel {
+  position: sticky;
+  top: 56px;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 14px 22px;
+  padding: 14px 20px 16px;
+  border-top: 0;
+  border-bottom: 3px solid var(--teal);
+  box-shadow: 0 6px 16px -10px rgba(5, 31, 32, 0.25);
+}
+
+.bi-panel-title {
+  align-self: center;
+  font-size: 16px;
+  white-space: nowrap;
+}
+
+.bi-panel-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 14px;
+  min-width: 0;
+}
+
+.bi-panel-fields .bi-field {
+  flex: 0 0 auto;
+}
+
+.bi-panel-fields .bi-toggle {
+  width: 210px;
+}
+
+.bi-panel-fields .bi-chips {
+  grid-template-columns: repeat(4, 54px);
+  gap: 6px;
+}
+
+.bi-panel-fields .bi-chips button {
+  height: 40px;
+}
+
+.bi-panel-fields .bi-toggle button {
+  height: 32px;
+}
+
+.bi-panel-fields .bi-pair {
+  display: flex;
+  gap: 14px;
+}
+
+.bi-panel-fields .bi-pair .bi-field {
+  width: 110px;
+}
+
+.bi-panel-fields #bi-date {
+  width: 160px;
+}
+
+.bi-panel-fields .bi-remark {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+
+.bi-panel-foot {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.bi-panel-foot .bi-totals {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 2px 18px;
+  padding: 8px 14px;
+  white-space: nowrap;
+}
+
+.bi-panel-foot .bi-totals div {
+  padding: 1px 0;
+  font-size: 12.5px;
+}
+
+.bi-panel-foot .bi-totals .bi-total-diff {
+  margin: 0;
+  padding: 1px 0;
+  border: 0;
+  font-size: 12.5px;
+}
+
+.bi-panel-foot .bi-apply {
+  width: auto;
+  min-width: 210px;
+  height: 46px;
+  padding: 0 20px;
+}
+
+.bi-scroll {
+  max-height: none;
+}
+
+.bi-table thead th {
+  top: 0;
+}
+
+@media (max-width: 1400px) {
+  .bi-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bi-panel-foot {
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 720px) {
+  .bi-panel {
+    position: static;
+  }
+  .bi-panel-fields .bi-field,
+  .bi-panel-fields .bi-toggle,
+  .bi-panel-fields #bi-date {
+    width: 100%;
+  }
+  .bi-panel-fields .bi-chips {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .bi-panel-fields .bi-pair {
+    width: 100%;
+  }
+  .bi-panel-fields .bi-pair .bi-field {
+    flex: 1;
+    width: auto;
+  }
+  .bi-panel-foot .bi-totals,
+  .bi-panel-foot .bi-apply {
+    width: 100%;
+  }
+}
