@@ -1,6 +1,6 @@
 import EmployeeProfile from "./models/EmployeeProfile.js";
 import { monthRecords } from "../dailyRegister/attendanceCache.js";
-import { registerScope, sameDepartment } from "../dailyRegister/registerScope.js";
+import { registerScope, profileInScope } from "../dailyRegister/registerScope.js";
 import { isWorkingOn, salaryForMonth } from "../utils/salaryFormulas.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
@@ -57,7 +57,7 @@ async function salarySheet(req, res) {
   if (scope) {
     const ids = new Set(scope.ids);
     employees = employees.filter(
-      (employee) => ids.has(String(employee.employeeId)) || sameDepartment(employee.department, scope.department)
+      (employee) => profileInScope(scope, ids, employee)
     );
   }
 

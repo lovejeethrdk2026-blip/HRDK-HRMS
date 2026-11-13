@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import api from "../api/axios";
 import { departmentHistoryOf, payHistoryOf, salaryOn, sortableDate, stateHistoryOf, workSpans } from "@salary";
 import { rupees } from "./SalarySplit";
 
@@ -249,42 +251,80 @@ export function monthsWorked(employee, shown = MONTHS_SHOWN) {
   return months.slice(-shown);
 }
 
-// Each month's pay as it stood on the month's last day, newest first.
+// Each month's pay as Pay Sheet 1 (BC365) shows it, newest first: what the
+// employee was actually paid, matched by Matrix ID (Initials No. / code).
+// Months on the rolls with no Pay Sheet row say so. Department is this app's
+// own record for that month.
 export function PayrollHistory({ employee }) {
   const months = monthsWorked(employee).reverse();
+  const [pay, setPay] = useState(null); // { "2026-10": { totalEarnings, ... } }
+  const [error, setError] = useState("");
+  const key = (y, m) => `${y}-${String(m).padStart(2, "0")}`;
+  const monthList = months.map(([y, m]) => key(y, m)).join(",");
+
+  useEffect(() => {
+    if (!monthList) return;
+    let live = true;
+    setPay(null);
+    setError("");
+    api
+      .get(`/paysheets/employee/${encodeURIComponent(employee.employeeId)}`, { params: { months: monthList } })
+      .then(({ data }) => live && setPay(Object.fromEntries(data.months.map((row) => [row.month, row]))))
+      .catch((err) => live && setError(err.response?.data?.message || err.message));
+    return () => {
+      live = false;
+    };
+  }, [employee.employeeId, monthList]);
+
   if (!months.length) return <p className="ch-empty">No date of joining, so no months to show.</p>;
+  if (error) return <p className="ch-empty">Could not read the Pay Sheet: {error}</p>;
+  if (!pay) return <p className="ch-empty">Reading the Pay Sheet…</p>;
+
   return (
     <div className="table-scroll">
       <table className="st-table">
         <thead>
           <tr>
             <th>Month</th>
-            <th>State</th>
             <th>Department</th>
-            <th className="st-num">Monthly CTC</th>
+            <th>Type</th>
             <th className="st-num">Gross</th>
             <th className="st-num">PF</th>
             <th className="st-num">ESIC</th>
             <th className="st-num">PT</th>
-            <th className="st-num">In hand</th>
+            <th className="st-num">TDS</th>
+            <th className="st-num">Deductions</th>
+            <th className="st-num">Net paid</th>
           </tr>
         </thead>
         <tbody>
           {months.map(([year, month, day]) => {
             const salary = salaryOn(employee, day);
+            const row = pay[key(year, month)];
             return (
               <tr key={`${year}-${month}`}>
                 <td>
                   {MONTH_NAMES[month - 1]} {year}
                 </td>
-                <td>{salary.state || "—"}</td>
                 <td>{place(salary.department, salary.subDepartment)}</td>
-                <td className="st-num">{rupees(salary.monthlyCtc)}</td>
-                <td className="st-num">{rupees(gross(salary))}</td>
-                <td className="st-num">{rupees(salary.pfEmployee)}</td>
-                <td className="st-num">{rupees(salary.esicEmployee)}</td>
-                <td className="st-num">{rupees(salary.professionalTax)}</td>
-                <td className="st-num">{rupees(salary.inHand)}</td>
+                {row ? (
+                  <>
+                    <td>{row.salaryTypes.map((t) => t.charAt(0) + t.slice(1).toLowerCase()).join(" + ") || "—"}</td>
+                    <td className="st-num">{rupees(row.totalEarnings)}</td>
+                    <td className="st-num">{rupees(row.pfEmployee)}</td>
+                    <td className="st-num">{rupees(row.esiEmployee)}</td>
+                    <td className="st-num">{rupees(row.professionalTax)}</td>
+                    <td className="st-num">{rupees(row.tdsOnSalary)}</td>
+                    <td className="st-num">{rupees(row.totalDeductions)}</td>
+                    <td className="st-num">
+                      <strong>{rupees(row.netAmount)}</strong>
+                    </td>
+                  </>
+                ) : (
+                  <td colSpan={8} className="ch-empty">
+                    Not in the Pay Sheet
+                  </td>
+                )}
               </tr>
             );
           })}

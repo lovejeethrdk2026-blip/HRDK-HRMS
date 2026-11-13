@@ -17,6 +17,8 @@ const employeeProfileSchema = new mongoose.Schema(
     subDepartment: text,
     designation: text,
     employeeRole: text, // "Employee", "Manager" or "Admin" (Add Employee dropdown)
+    gender: text, // "Male", "Female" or "Other"
+    salutation: text, // "Mr.", "Ms.", "Mrs." or "Mx." (fits the gender)
     // Every department worked in, oldest first; a department transfer closes
     // the current spell the day before its effective date ("DD-MM-YYYY").
     departmentHistory: [
@@ -104,24 +106,58 @@ const employeeProfileSchema = new mongoose.Schema(
     otherId: { type: { type: String, default: "" }, number: text },
     mobile: text,
     emergencyContact: { name: text, phone: text, relation: text },
-    address: { line: text, city: text, state: text, pin: text, country: text },
+    address: { line: text, city: text, district: text, state: text, pin: text, country: text },
     // "Yes" when the permanent address is the same as the current one (the
     // form then copies address into permanentAddress on save).
     permanentSameAsCurrent: text,
-    permanentAddress: { line: text, city: text, state: text, pin: text, country: text },
+    permanentAddress: { line: text, city: text, district: text, state: text, pin: text, country: text },
 
     bank: { bankName: text, accountNo: text, ifscCode: text },
 
     shift: { in: text, out: text }, // "HH:mm"
 
-    // Add Employee > Documents: files kept in server/uploads/employees/<employeeId>/
-    // (employee/employeeDocuments.js).
+    // Add Employee > Family. esicCovered is worked out on save
+    // (familyEsicCovered in utils/salaryFormulas.js).
+    family: [
+      {
+        _id: false,
+        relation: text, // Father, Mother, Spouse or Child
+        name: text,
+        dob: text, // "DD-MM-YYYY"
+        esicCovered: { type: Boolean, default: false }
+      }
+    ],
+
+    // Add Employee > PF nominee: who gets the PF if the employee dies, and
+    // what % (all nominees together 100).
+    pfNominees: [
+      {
+        _id: false,
+        relation: text, // Father, Mother, Wife, Husband, Son, Daughter, Brother, Sister, Other
+        name: text,
+        dob: text, // "DD-MM-YYYY"
+        gender: text, // Male, Female, Other
+        pfShare: { type: Number, default: 0 },
+        aadhaar: text,
+        mobile: text,
+        sameAddress: { type: Boolean, default: true }, // same as the employee's address
+        address: text,
+        bank: { bankName: text, accountNo: text, ifscCode: text },
+        guardian: { name: text, relation: text } // when the nominee is a minor
+      }
+    ],
+
+    // Add Employee > Documents: files kept in Google Drive (hrdk-hrms/<code>_<NAME>/)
+    // when connected, else in server/uploads/employees/<employeeId>/
+    // (employee/employeeDocuments.js). driveFolderId: this employee's Drive folder.
+    driveFolderId: text,
     documents: [
       {
         _id: false,
         id: text,
         title: text, // "Aadhaar card", "PAN card", ...
-        fileName: text, // EmpCode_EmpName_DocName.pdf, also its name on disk
+        fileName: text, // 10001_RISHIKA_SONI_Aadhaar_Card.pdf, its name in Drive (or on disk)
+        driveFileId: text, // set when the file is in Google Drive, empty when on disk
         originalName: text, // the name it was uploaded with
         mimeType: text, // application/pdf, image/jpeg or image/png
         size: Number,

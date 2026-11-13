@@ -292,9 +292,20 @@ async function getHeadCount(req, res) {
 
 // GET /api/attendance/departments -> { departments: ["WAX", ...] }, the COSEC
 // departments in the employee master copy (Users page: Daily Register department).
+// Also { sections: { "MACHINE CHAIN": ["LASER", "SILKY", ...] } }: COSEC Section
+// is the sub department.
 async function getRegisterDepartments(req, res) {
-  const names = await Employee.distinct("department", { department: { $nin: ["", null] } });
-  res.json({ departments: names.map(String).sort((a, b) => a.localeCompare(b)) });
+  const pairs = await Employee.aggregate([
+    { $match: { department: { $nin: ["", null] } } },
+    { $group: { _id: { department: "$department", section: "$section" } } }
+  ]);
+  const sections = {};
+  for (const { _id } of pairs) {
+    const list = (sections[_id.department] ??= []);
+    if (_id.section) list.push(String(_id.section));
+  }
+  for (const list of Object.values(sections)) list.sort((a, b) => a.localeCompare(b));
+  res.json({ departments: Object.keys(sections).sort((a, b) => a.localeCompare(b)), sections });
 }
 
 // GET /api/attendance/night-shift -> { employees: [{ employeeId, name, department,

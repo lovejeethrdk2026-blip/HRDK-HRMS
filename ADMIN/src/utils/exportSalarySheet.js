@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import { XLSX, loadXlsx } from "./xlsx";
 import api from "../api/axios";
 
 // Employees page > Download salary sheet: one row per employee on the rolls in
@@ -9,6 +9,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 // month "YYYY-MM". Returns how many rows the file got (0: no file).
 export async function exportSalarySheet(month) {
+  await loadXlsx();
   const { data } = await api.get("/employees/salary-sheet", { params: { month } });
   const rows = data.rows || [];
   if (!rows.length) return 0;

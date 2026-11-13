@@ -3,6 +3,7 @@ import { roleLabel, useAuth } from "../auth/AuthContext";
 import Brand from "./Brand";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import { StatusStrip, visibleMenu } from "./Sidebar";
+import { myDepartmentNames } from "../utils/userScope";
 
 
 function Chevron({ open }) {
@@ -130,7 +131,7 @@ function UserMenu({ onNavigate }) {
             <strong>{user.username}</strong>
             <span>
               {roleLabel(user.role)}
-              {user.role === "admin" ? " · All departments" : user.department?.name ? ` · ${user.department.name}` : ""}
+              {user.role === "admin" ? " · All departments" : user.departments?.length ? ` · ${myDepartmentNames(user)}` : ""}
             </span>
           </div>
           {user.role === "admin" && (

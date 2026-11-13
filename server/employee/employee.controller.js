@@ -2,6 +2,9 @@ import EmployeeProfile from "./models/EmployeeProfile.js";
 import Department from "../department/models/Department.js";
 import {
   departmentHistoryOf,
+  FAMILY_RELATIONS,
+  ageOn,
+  familyEsicCovered,
   openExitOf,
   payHistoryOf,
   salaryStructure,
@@ -9,7 +12,8 @@ import {
   stateHistoryOf
 } from "../utils/salaryFormulas.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { registerScope, sameDepartment } from "../dailyRegister/registerScope.js";
+import { registerScope, profileInScope } from "../dailyRegister/registerScope.js";
+import { renameInDrive } from "./employeeDocuments.js";
 
 // Only the employee code and name are required (the record is keyed by the
 // code): path -> label for the "... is required" message. Every other field
@@ -22,6 +26,8 @@ const REQUIRED = {
 // Text fields the Add Employee form sends, by path into the record.
 const TEXT_PATHS = [
   "initialsNo",
+  "gender",
+  "salutation",
   "department",
   "subDepartment", // optional: a department may have no sub departments
   "designation",
@@ -47,12 +53,14 @@ const TEXT_PATHS = [
   "emergencyContact.relation",
   "address.line",
   "address.city",
+  "address.district",
   "address.state",
   "address.pin",
   "address.country",
   "permanentSameAsCurrent",
   "permanentAddress.line",
   "permanentAddress.city",
+  "permanentAddress.district",
   "permanentAddress.state",
   "permanentAddress.pin",
   "permanentAddress.country",
@@ -66,6 +74,8 @@ const TEXT_PATHS = [
 // Shape checks, by path: [pattern, message].
 const FORMATS = {
   initialsNo: [/^\d{1,10}$/, "Initials No. must be digits only"],
+  gender: [/^(Male|Female|Other)$/, "Gender must be Male, Female or Other"],
+  salutation: [/^(Mr|Ms|Mrs|Mx)\.$/, "Salutation must be Mr., Ms., Mrs. or Mx."],
   joiningDate: [/^\d{2}-\d{2}-\d{4}$/, "Date of joining must be DD-MM-YYYY"],
   aadhaarNo: [/^\d{12}$/, "Aadhaar number must be 12 digits"],
   pan: [/^[A-Z]{5}[0-9]{4}[A-Z]$/, "PAN must look like ABCDE1234F"],
@@ -128,6 +138,12 @@ function buildRecord(body) {
     setPath(record, path, value);
   }
 
+  // Salutation must fit the gender (the Add Employee form keeps them in step).
+  const GENDER_OF_SALUTATION = { "Mr.": "Male", "Ms.": "Female", "Mrs.": "Female", "Mx.": "Other" };
+  if (record.salutation && record.gender && GENDER_OF_SALUTATION[record.salutation] !== record.gender) {
+    return { error: `Salutation ${record.salutation} does not fit gender ${record.gender}` };
+  }
+
   for (const path of ["yearlyCtc", "monthlyCtc"]) {
     const raw = String(body[path] ?? "").trim();
     if (!raw) continue;
@@ -156,8 +172,97 @@ function buildRecord(body) {
     record.esicApplicable = true;
   }
 
+  // Family members and PF nominees: only when the form sends the list (bulk
+  // upload does not, so a re-upload leaves the saved ones alone).
+  if (Array.isArray(body.family)) {
+    const { family, error } = buildFamily(body.family, record.esicApplicable);
+    if (error) return { error };
+    record.family = family;
+  }
+  if (Array.isArray(body.pfNominees)) {
+    const { nominees, error } = buildNominees(body.pfNominees);
+    if (error) return { error };
+    record.pfNominees = nominees;
+  }
+
   record.salary = salaryStructure(record);
   return { record };
+}
+
+// The Family step's rows -> stored members with ESIC cover worked out:
+// { family } or { error }.
+function buildFamily(rows, esicApplicable) {
+  if (rows.length > 20) return { error: "Too many family members" };
+  const family = [];
+  for (const row of rows) {
+    const relation = String(row?.relation ?? "").trim();
+    const name = String(row?.name ?? "").trim();
+    const dob = String(row?.dob ?? "").trim();
+    if (!name) continue;
+    if (!FAMILY_RELATIONS.includes(relation)) return { error: `Unknown family relation "${relation}"` };
+    if (dob && !isDate(dob)) return { error: `Date of birth of ${name} must be DD-MM-YYYY` };
+    if (relation !== "Child" && family.some((m) => m.relation === relation)) {
+      return { error: `Only one ${relation.toLowerCase()} can be listed` };
+    }
+    const member = { relation, name, dob };
+    member.esicCovered = familyEsicCovered(member, Boolean(esicApplicable));
+    family.push(member);
+  }
+  return { family };
+}
+
+const NOMINEE_RELATIONS = ["Father", "Mother", "Wife", "Husband", "Son", "Daughter", "Brother", "Sister", "Other"];
+const GENDERS = ["Male", "Female", "Other"];
+
+// The PF nominee step's rows -> stored nominees: { nominees } or { error }.
+// Shares must add up to 100%; a minor needs a guardian.
+function buildNominees(rows) {
+  if (rows.length > 20) return { error: "Too many PF nominees" };
+  const str = (value) => String(value ?? "").trim();
+  const nominees = [];
+  for (const row of rows) {
+    const name = str(row?.name);
+    if (!name) continue;
+    const nominee = {
+      relation: str(row.relation),
+      name,
+      dob: str(row.dob),
+      gender: str(row.gender),
+      pfShare: Number(str(row.pfShare)),
+      aadhaar: str(row.aadhaar),
+      mobile: str(row.mobile),
+      sameAddress: row.sameAddress !== false,
+      address: str(row.address),
+      bank: {
+        bankName: str(row.bank?.bankName),
+        accountNo: str(row.bank?.accountNo),
+        ifscCode: str(row.bank?.ifscCode).toUpperCase()
+      },
+      guardian: { name: str(row.guardian?.name), relation: str(row.guardian?.relation) }
+    };
+    const fail = (message) => ({ error: `PF nominee ${name}: ${message}` });
+    if (!NOMINEE_RELATIONS.includes(nominee.relation)) return fail("pick a relation");
+    if (nominee.gender && !GENDERS.includes(nominee.gender)) return fail("gender must be Male, Female or Other");
+    if (nominee.dob && !isDate(nominee.dob)) return fail("date of birth must be DD-MM-YYYY");
+    if (!Number.isFinite(nominee.pfShare) || nominee.pfShare <= 0 || nominee.pfShare > 100) {
+      return fail("PF share must be above 0 and up to 100");
+    }
+    const checks = [
+      [nominee.aadhaar, /^\d{12}$/, "Aadhaar number must be 12 digits"],
+      [nominee.mobile, /^\d{10}$/, "mobile number must be 10 digits"],
+      [nominee.bank.accountNo, /^\d{6,18}$/, "bank account number must be 6 to 18 digits"],
+      [nominee.bank.ifscCode, /^[A-Z]{4}0[A-Z0-9]{6}$/, "IFSC must look like SBIN0001234"]
+    ];
+    for (const [value, pattern, message] of checks) {
+      if (value && !pattern.test(value)) return fail(message);
+    }
+    const age = ageOn(nominee.dob);
+    if (age != null && age < 18 && !nominee.guardian.name) return fail("is a minor, add a guardian name");
+    nominees.push(nominee);
+  }
+  const total = Math.round(nominees.reduce((sum, n) => sum + n.pfShare, 0) * 100) / 100;
+  if (nominees.length && total !== 100) return { error: `PF nominee shares must add up to 100% (now ${total}%)` };
+  return { nominees };
 }
 
 const bodyOf = (req) => (req.body && typeof req.body === "object" ? req.body : {});
@@ -237,9 +342,12 @@ async function updateEmployee(req, res) {
   }
   record.payHistory = pays;
 
+  const oldName = employee.name;
   employee.set(record);
   await employee.save();
   res.json(employee.toObject());
+  // New name: rename the Google Drive folder and files to match (background).
+  if (employee.name !== oldName) renameInDrive(employee);
 }
 
 // A real "DD-MM-YYYY" date: no 31-02-2026.
@@ -570,7 +678,7 @@ async function listEmployees(req, res) {
   if (scope) {
     const ids = new Set(scope.ids);
     employees = employees.filter(
-      (employee) => ids.has(String(employee.employeeId)) || sameDepartment(employee.department, scope.department)
+      (employee) => profileInScope(scope, ids, employee)
     );
   }
   for (const employee of employees) {

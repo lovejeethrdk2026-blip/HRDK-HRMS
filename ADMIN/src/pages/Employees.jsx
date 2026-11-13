@@ -18,9 +18,11 @@ function lastMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 import { exportEmployeeStatesToExcel, exportEmployeeToExcel, exportEmployeesToExcel } from "../utils/exportEmployees";
+import { exportEmployeeFullHistory } from "../utils/exportFullHistory";
 import { statusOf } from "../utils/employeeStatus";
 import { openExitOf, stateHistoryOf } from "@salary";
 import AddEmployee from "./AddEmployee";
+import { inMyDepartments, myDepartmentNames } from "../utils/userScope";
 
 // Employees tab: one card per employee saved on Add Employee, newest first,
 // from GET /api/employees (server/employee/employee.controller.js).
@@ -75,6 +77,8 @@ function detailSections(employee, seeSalary) {
       "Work",
       [
         ["Initials No.", employee.initialsNo],
+        ["Salutation", employee.salutation],
+        ["Gender", employee.gender],
         ["Department", employee.department],
         ["Sub department", employee.subDepartment],
         ["Designation", employee.designation],
@@ -115,6 +119,7 @@ function detailSections(employee, seeSalary) {
       [
         ["Address", address.line],
         ["City", address.city],
+        ["District", address.district],
         ["State", address.state],
         ["PIN code", address.pin],
         ["Country", address.country],
@@ -122,7 +127,7 @@ function detailSections(employee, seeSalary) {
           "Permanent address",
           employee.permanentSameAsCurrent === "Yes"
             ? "Same as current"
-            : [permanent.line, permanent.city, permanent.state, permanent.pin, permanent.country]
+            : [permanent.line, permanent.city, permanent.district, permanent.state, permanent.pin, permanent.country]
                 .filter(Boolean)
                 .join(", ")
         ]
@@ -290,6 +295,25 @@ function EmployeeDetail({ employee, onEdit, onTransferred }) {
     onTransferred(updated, kind);
   };
   const role = [employee.designation, employee.department, employee.subDepartment].filter(Boolean).join(" · ");
+  const [historyBusy, setHistoryBusy] = useState(false); // Full history download in progress
+  const [historyNote, setHistoryNote] = useState("");
+
+  async function downloadFullHistory() {
+    setHistoryBusy(true);
+    setHistoryNote("");
+    try {
+      const { months, paySheetError } = await exportEmployeeFullHistory(employee, { seeSalary });
+      setHistoryNote(
+        paySheetError
+          ? `Downloaded ${months} months, but the Pay Sheet could not be read: ${paySheetError}`
+          : `Downloaded ${months} month${months === 1 ? "" : "s"} of history.`
+      );
+    } catch (err) {
+      setHistoryNote(`Could not download: ${err.message}`);
+    } finally {
+      setHistoryBusy(false);
+    }
+  }
 
   return (
     <article className="card emp-card is-open">
@@ -344,6 +368,27 @@ function EmployeeDetail({ employee, onEdit, onTransferred }) {
                 />
               </svg>
               Download Excel
+            </button>
+          )}
+          {can("employees.report") && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={downloadFullHistory}
+              disabled={historyBusy}
+              title="One sheet, one row per month: every detail (family, IDs, bank, nominees), that month's state, department and pay, what the Pay Sheet paid, and every change"
+            >
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                <path
+                  d="M8 2v8M4.5 6.5L8 10l3.5-3.5M3 13h10"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {historyBusy ? "Preparing…" : "Full history (1 sheet)"}
             </button>
           )}
           {can("employees.report") && (
@@ -415,6 +460,11 @@ function EmployeeDetail({ employee, onEdit, onTransferred }) {
             </button>
           ))}
         </div>
+        {historyNote && (
+          <p className="emp-box-note" role="status">
+            {historyNote}
+          </p>
+        )}
         {transferring === "salary" && (
           <SalaryRevisionForm
             employee={employee}
@@ -467,7 +517,7 @@ function EmployeeDetail({ employee, onEdit, onTransferred }) {
         <section className="emp-box">
           <h3 className="emp-box-title">Payroll</h3>
           <p className="emp-box-note">
-            This month's split, each month's pay in the state, department and CTC of that month, and every salary
+            This month's split, what was actually paid each month (from Pay Sheet 1, BC365), and every salary
             revision with the pay before and after.
           </p>
           <SalarySplit salary={employee.salary} />
@@ -508,7 +558,7 @@ export default function Employees({ onNavigate }) {
   const { user, can } = useAuth();
   const ownOnly = user.role !== "admin" && user.employeeScope === "department";
   const visible = (employees || []).filter(
-    (employee) => !ownOnly || employee.department === user.department?.name
+    (employee) => !ownOnly || inMyDepartments(user, employee)
   );
   const opened = openId && visible.find((employee) => employee.employeeId === openId);
   const inDepartment = visible.filter(
@@ -604,7 +654,7 @@ export default function Employees({ onNavigate }) {
     body = (
       <div className="card">
         <p className="state-panel">
-          {ownOnly ? `No employees in ${user.department?.name || "your department"} yet.` : "No employees yet."}
+          {ownOnly ? `No employees in ${myDepartmentNames(user, "your department")} yet.` : "No employees yet."}
           <br />
           {can("employees.add") && (
             <button type="button" className="btn" onClick={() => onNavigate("addEmployee")}>
@@ -794,8 +844,8 @@ export default function Employees({ onNavigate }) {
             type="button"
             className="btn"
             disabled={!visible.length}
-            onClick={() => {
-              const { transfers } = exportTransfersToExcel(visible);
+            onClick={async () => {
+              const { transfers } = await exportTransfersToExcel(visible);
               setReportNote(`Downloaded ${transfers} transfer${transfers === 1 ? "" : "s"} and the full history.`);
             }}
           >
@@ -805,8 +855,8 @@ export default function Employees({ onNavigate }) {
             type="button"
             className="btn"
             disabled={!visible.length}
-            onClick={() => {
-              const exits = exportExitsToExcel(visible);
+            onClick={async () => {
+              const exits = await exportExitsToExcel(visible);
               setReportNote(exits ? `Downloaded ${exits} exit${exits === 1 ? "" : "s"}.` : "No one has left yet.");
             }}
           >

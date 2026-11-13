@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import { XLSX, loadXlsx } from "./xlsx";
 import {
   FULL_DAY_HOURS,
   punchCount,
@@ -22,7 +22,8 @@ function pairNumbers(doc) {
 // register: the Daily Register's slim layout -- Employee ID, Name, Department, Section,
 // Date, Total Punches, Lunch Break, Total Working, vs 8 Hours and the IN/OUT
 // pairs only.
-export function exportAttendanceToExcel(records, filename = "attendance", { register = false } = {}) {
+export async function exportAttendanceToExcel(records, filename = "attendance", { register = false } = {}) {
+  await loadXlsx();
   if (!records.length) return;
 
   const maxPairs = Math.max(...records.map((doc) => Math.max(0, ...pairNumbers(doc))));

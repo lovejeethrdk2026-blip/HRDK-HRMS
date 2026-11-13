@@ -7,21 +7,42 @@ import api from "../api/axios";
 // uploadDocuments(). Saved files (when editing) open, download or delete
 // straight away. Server side: server/employee/employeeDocuments.js.
 
-export const DOCUMENT_TITLES = [
-  "Aadhaar card",
-  "PAN card",
-  "Bank passbook / cheque",
-  "Photo",
-  "10th marksheet",
-  "12th marksheet",
-  "UG marksheet",
-  "PG marksheet",
-  "Educational certificate",
-  "Resume",
-  "Offer letter",
-  "Experience letter",
-  "Other"
+// Upload slots, shown in these groups.
+export const DOCUMENT_GROUPS = [
+  {
+    heading: "Personal documents",
+    titles: [
+      "Aadhaar card",
+      "PAN card",
+      "Bank passbook / cheque",
+      "Photo",
+      "10th marksheet",
+      "12th marksheet",
+      "UG marksheet",
+      "PG marksheet",
+      "Educational certificate",
+      "Resume",
+      "Offer letter",
+      "Experience letter",
+      "Other"
+    ]
+  },
+  {
+    // Parents' papers (ESIC family cover, PF nomination). No apostrophes: the
+    // server strips them from titles, and the saved title must match this list.
+    heading: "Father & mother documents",
+    titles: [
+      "Father Aadhaar card",
+      "Mother Aadhaar card",
+      "Father PAN card",
+      "Mother PAN card",
+      "Father photo",
+      "Mother photo"
+    ]
+  }
 ];
+
+export const DOCUMENT_TITLES = DOCUMENT_GROUPS.flatMap((group) => group.titles);
 
 // Papers every employee must have before the form saves (AddEmployee checks
 // missingKyc). Empty: no document is required. Add titles here to require them.
@@ -37,19 +58,15 @@ const MAX_BYTES = 10 * 1024 * 1024;
 const sizeText = (bytes) =>
   bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
-// Same as namePart in server/employee/employeeDocuments.js: "Bank passbook /
-// cheque" -> "BankPassbookCheque".
-const namePart = (text) =>
-  String(text || "")
-    .split(/[^A-Za-z0-9]+/)
-    .filter(Boolean)
-    .map((word) => word[0].toUpperCase() + word.slice(1))
-    .join("");
+// Same as folderNameOf / titleWords in server/drive/googleDrive.js.
+const words = (text) => String(text || "").split(/[^A-Za-z0-9]+/).filter(Boolean);
+const upperWords = (text) => words(text).map((word) => word.toUpperCase()).join("_"); // "RISHIKA_SONI"
+const titleWords = (text) => words(text).map((word) => word[0].toUpperCase() + word.slice(1)).join("_"); // "Bank_Passbook_Cheque"
 
-// What the server will call the file: EmpCode_EmpName_DocName.pdf.
+// What the server will call the file: 10001_RISHIKA_SONI_Aadhaar_Card.pdf.
 const savedName = (code, name, title, file) => {
   const ext = file.type === "application/pdf" ? ".pdf" : file.type === "image/png" ? ".png" : ".jpg";
-  return [code || "Code", namePart(name) || "Name", namePart(title) || "Document"].join("_") + ext;
+  return [code || "Code", upperWords(name) || "NAME", titleWords(title) || "Document"].join("_") + ext;
 };
 
 const fileUrl = (employeeId, doc, download) =>
@@ -181,7 +198,7 @@ export default function EmployeeDocuments({ employeeId, employeeCode, employeeNa
       const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
       const a = document.createElement("a");
       a.href = url;
-      a.download = [employeeCode || "Code", namePart(employeeName) || "Name", "Documents"].join("_") + ".pdf";
+      a.download = [employeeCode || "Code", upperWords(employeeName) || "NAME", "Documents"].join("_") + ".pdf";
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (err) {
@@ -266,13 +283,16 @@ export default function EmployeeDocuments({ employeeId, employeeCode, employeeNa
           {problem}
         </p>
       )}
+      {DOCUMENT_GROUPS.map((group) => (
+      <section key={group.heading} className="ae-slot-group">
+      <h3 className="ae-salary-title">{group.heading}</h3>
       <div className="ae-slots">
-        {DOCUMENT_TITLES.map((title) => {
+        {group.titles.map((title) => {
           const required = KYC_TITLES.includes(title);
           const slotSaved = saved.filter((d) => slotOf(d.title) === title);
           const slotPending = pending.filter((p) => slotOf(p.title) === title);
           const count = slotSaved.length + slotPending.length;
-          const inputId = `ae-doc-${namePart(title)}`;
+          const inputId = `ae-doc-${titleWords(title)}`;
           return (
             <div key={title} className={`ae-slot${count ? " has-file" : required ? " is-missing" : ""}`}>
               <div className="ae-slot-head">
@@ -306,6 +326,8 @@ export default function EmployeeDocuments({ employeeId, employeeCode, employeeNa
           );
         })}
       </div>
+      </section>
+      ))}
     </div>
   );
 }

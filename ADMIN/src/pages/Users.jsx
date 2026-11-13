@@ -2,21 +2,64 @@ import { useEffect, useState } from "react";
 import api from "../api/axios";
 import { roleLabel, useAuth } from "../auth/AuthContext";
 import Loader from "../components/Loader";
+import GoogleDriveCard from "../components/GoogleDriveCard";
+import DepartmentPicker from "../components/DepartmentPicker";
 
 // Admin page (top-right menu > Admin): every user, "+ Add user" to give a
 // manager or viewer their username and password, and "New password" for a
 // user who forgot theirs. Uses server/users (admin-only routes).
 
+// Department fields shared by "+ Add user" and "Edit": one or more departments
+// (each with sub departments) and Daily Register departments (each with COSEC
+// sections). Hidden for an admin, who sees every department.
+//   departmentOptions / registerOptions: [{ name, subs: [...] }]
+function AccessFields({ form, setForm, departmentOptions, registerOptions }) {
+  if (form.role === "admin") return <p className="cp-note">An admin can see and manage every department.</p>;
+  return (
+    <>
+      <div className="us-pickers">
+      <DepartmentPicker
+        id="uf-depts"
+        label="Departments"
+        options={departmentOptions}
+        value={form.departments}
+        onChange={(departments) => setForm((f) => ({ ...f, departments }))}
+        emptyText="No departments yet. Add them on the Department page."
+      />
+      <DepartmentPicker
+        id="uf-register"
+        label="Daily Register departments"
+        options={registerOptions}
+        value={form.registerDepartments}
+        onChange={(registerDepartments) => setForm((f) => ({ ...f, registerDepartments }))}
+        subLabel="sections"
+      />
+      </div>
+      <p className="cp-note">
+        No sub department picked = the whole department. No Daily Register department picked = every department.
+      </p>
+    </>
+  );
+}
+
+// form -> the body POST /users/register and PUT /users/:id expect.
+function accessBody(form) {
+  if (form.role === "admin") return { departments: [], registerDepartments: [] };
+  return {
+    departments: form.departments.map((d) => ({ name: d.name, subDepartments: d.subs })),
+    registerDepartments: form.registerDepartments.map((d) => ({ name: d.name, sections: d.subs }))
+  };
+}
+
 // "+ Add user" dialog: POST /users/register.
 // roles: from the Roles & Permissions page, e.g. [{ name: "manager", label: "Manager" }].
-// registerDepartments: COSEC department names from the Daily Register.
-function AddUserDialog({ departments, registerDepartments, roles, onSaved, onClose }) {
+function AddUserDialog({ departmentOptions, registerOptions, roles, onSaved, onClose }) {
   const [form, setForm] = useState({
     username: "",
     password: "",
     role: roles[0]?.name || "admin",
-    department: "",
-    registerDepartment: ""
+    departments: [],
+    registerDepartments: []
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -25,14 +68,13 @@ function AddUserDialog({ departments, registerDepartments, roles, onSaved, onClo
   async function handleSubmit(e) {
     e.preventDefault();
     if (form.password.length < 6) return setError("Password must be at least 6 characters");
-    if (form.role !== "admin" && !form.department) return setError("Pick a department");
+    if (form.role !== "admin" && !form.departments.length) return setError("Pick at least one department");
     setSaving(true);
     setError("");
     try {
-      // an admin works in every department, so none is sent
-      const department = form.role === "admin" ? "" : form.department;
-      await api.post("/users/register", { ...form, department, username: form.username.trim() });
-      onSaved(form.username.trim());
+      const username = form.username.trim();
+      await api.post("/users/register", { username, password: form.password, role: form.role, ...accessBody(form) });
+      onSaved(username);
     } catch (err) {
       setError(err.response?.data?.message || err.message);
       setSaving(false);
@@ -41,7 +83,10 @@ function AddUserDialog({ departments, registerDepartments, roles, onSaved, onClo
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <form className="modal-card dept-modal" role="dialog" aria-modal="true" aria-labelledby="au-title" onSubmit={handleSubmit}>
+      <form className="modal-card dept-modal us-user-modal" role="dialog" aria-modal="true" aria-labelledby="au-title" onSubmit={handleSubmit}>
+        <button type="button" className="us-modal-close" aria-label="Close" onClick={onClose} disabled={saving}>
+          ×
+        </button>
         <h2 id="au-title" className="dept-modal-title">
           Add user
         </h2>
@@ -73,39 +118,7 @@ function AddUserDialog({ departments, registerDepartments, roles, onSaved, onClo
           ))}
           <option value="admin">Administrator</option>
         </select>
-        {form.role === "admin" ? (
-          <p className="cp-note">An admin can see and manage every department.</p>
-        ) : (
-          <>
-            <label className="dept-modal-label" htmlFor="au-dept">
-              Department
-            </label>
-            <select id="au-dept" className="dept-modal-input" value={form.department} onChange={set("department")} required>
-              <option value="">Select…</option>
-              {departments.map((d) => (
-                <option key={d.name} value={d.name}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-            <label className="dept-modal-label" htmlFor="au-register-dept">
-              Daily Register department
-            </label>
-            <select
-              id="au-register-dept"
-              className="dept-modal-input"
-              value={form.registerDepartment}
-              onChange={set("registerDepartment")}
-            >
-              <option value="">All departments</option>
-              {registerDepartments.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </>
-        )}
+        <AccessFields form={form} setForm={setForm} departmentOptions={departmentOptions} registerOptions={registerOptions} />
         {error && (
           <p className="dept-modal-error" role="alert">
             {error}
@@ -117,6 +130,79 @@ function AddUserDialog({ departments, registerDepartments, roles, onSaved, onClo
           </button>
           <button type="submit" className="btn btn-primary" disabled={saving}>
             {saving ? "Saving…" : "Add user"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// "Edit" dialog: PUT /users/:id (username, role, departments, Daily Register departments).
+// isMe: the admin editing their own login, whose role cannot change.
+function EditUserDialog({ user, isMe, departmentOptions, registerOptions, roles, onSaved, onClose }) {
+  const [form, setForm] = useState({
+    username: user.username,
+    role: user.role,
+    departments: (user.departments || []).map((d) => ({ name: d.name, subs: d.subDepartments || [] })),
+    registerDepartments: (user.registerDepartments || []).map((d) => ({ name: d.name, subs: d.sections || [] }))
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.username.trim()) return setError("Username is required");
+    if (form.role !== "admin" && !form.departments.length) return setError("Pick at least one department");
+    setSaving(true);
+    setError("");
+    try {
+      const username = form.username.trim();
+      await api.put(`/users/${user._id}`, { username, role: form.role, ...accessBody(form) });
+      onSaved(username);
+    } catch (err) {
+      setError(err.response?.data?.message || err.message);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <form className="modal-card dept-modal us-user-modal" role="dialog" aria-modal="true" aria-labelledby="eu-title" onSubmit={handleSubmit}>
+        <button type="button" className="us-modal-close" aria-label="Close" onClick={onClose} disabled={saving}>
+          ×
+        </button>
+        <h2 id="eu-title" className="dept-modal-title">
+          Edit {user.username}
+        </h2>
+        <label className="dept-modal-label" htmlFor="eu-username">
+          Username
+        </label>
+        <input id="eu-username" className="dept-modal-input" autoFocus value={form.username} onChange={set("username")} required />
+        <label className="dept-modal-label" htmlFor="eu-role">
+          Role
+        </label>
+        <select id="eu-role" className="dept-modal-input" value={form.role} onChange={set("role")} disabled={isMe}>
+          {roles.map((role) => (
+            <option key={role.name} value={role.name}>
+              {role.label}
+            </option>
+          ))}
+          <option value="admin">Administrator</option>
+        </select>
+        {isMe && <p className="cp-note">You cannot change your own role.</p>}
+        <AccessFields form={form} setForm={setForm} departmentOptions={departmentOptions} registerOptions={registerOptions} />
+        {error && (
+          <p className="dept-modal-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="dept-modal-actions">
+          <button type="button" className="btn" onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? "Saving…" : "Save changes"}
           </button>
         </div>
       </form>
@@ -252,14 +338,16 @@ function UserAvatar({ user }) {
 }
 
 export default function Users() {
-  const { user: me } = useAuth();
+  const { user: me, refreshAccess } = useAuth();
   const [layout, setLayout] = useState("list"); // "list": one line each, "cards": the grid
   const [users, setUsers] = useState(null);
-  const [departments, setDepartments] = useState([]);
-  const [registerDepartments, setRegisterDepartments] = useState([]); // COSEC, for the Daily Register
+  // pickers: [{ name, subs }] from the Department page, and COSEC departments with their sections
+  const [departmentOptions, setDepartmentOptions] = useState([]);
+  const [registerOptions, setRegisterOptions] = useState([]);
   const [roles, setRoles] = useState([]); // from the Roles & Permissions page
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState(null); // the user being edited
   const [resetting, setResetting] = useState(null); // the user getting a new password
   const [deleting, setDeleting] = useState(null); // the user being deleted
   const [note, setNote] = useState("");
@@ -278,12 +366,22 @@ export default function Users() {
     load();
     api
       .get("/departments")
-      .then(({ data }) => setDepartments(data.departments || []))
-      .catch(() => setDepartments([]));
+      .then(({ data }) =>
+        setDepartmentOptions(
+          // sub departments come as [{ name }]
+          (data.departments || []).map((d) => ({
+            name: d.name,
+            subs: (d.subDepartments || []).map((sub) => (typeof sub === "string" ? sub : sub.name))
+          }))
+        )
+      )
+      .catch(() => setDepartmentOptions([]));
     api
       .get("/attendance/departments")
-      .then(({ data }) => setRegisterDepartments(data.departments || []))
-      .catch(() => setRegisterDepartments([]));
+      .then(({ data }) =>
+        setRegisterOptions((data.departments || []).map((name) => ({ name, subs: data.sections?.[name] || [] })))
+      )
+      .catch(() => setRegisterOptions([]));
     api
       .get("/roles")
       .then(({ data }) => setRoles(data.roles || []))
@@ -294,9 +392,18 @@ export default function Users() {
   }, []);
 
   const roleName = (user) => roles.find((r) => r.name === user.role)?.label || roleLabel(user.role);
-  const departmentName = (user) => (user.role === "admin" ? "All departments" : user.department?.name || "No department");
+  // "CASTING DEPARTMENT (WAX, POLISH), CAD DEPARTMENT"
+  const describe = (list, key, none) =>
+    list?.length ? list.map((d) => (d[key]?.length ? `${d.name} (${d[key].join(", ")})` : d.name)).join(", ") : none;
+  const departmentName = (user) =>
+    user.role === "admin" ? "All departments" : describe(user.departments, "subDepartments", "No department");
+  const registerName = (user) =>
+    user.role === "admin" ? "All departments" : describe(user.registerDepartments, "sections", "All departments");
   const actions = (user) => (
     <span className="us-actions">
+      <button type="button" className="btn" onClick={() => setEditing(user)}>
+        Edit
+      </button>
       <button type="button" className="btn" onClick={() => setResetting(user)}>
         New password
       </button>
@@ -342,6 +449,8 @@ export default function Users() {
         </div>
       </div>
 
+      <GoogleDriveCard />
+
       {note && (
         <div className="detail-banner" role="status">
           <span>{note}</span>
@@ -386,7 +495,7 @@ export default function Users() {
                       <span className={`us-role us-role-${user.role}`}>{roleName(user)}</span>
                     </td>
                     <td>{departmentName(user)}</td>
-                    <td>{user.role === "admin" ? "All departments" : user.registerDepartment || "All departments"}</td>
+                    <td>{registerName(user)}</td>
                     <td className={user.online ? "us-online-text" : undefined}>{lastActive(user)}</td>
                     <td>{new Date(user.createdAt).toLocaleDateString("en-GB")}</td>
                     <td className="us-list-actions">{actions(user)}</td>
@@ -411,7 +520,7 @@ export default function Users() {
                   </span>
                   <span className="us-dept">{departmentName(user)}</span>
                   {user.role !== "admin" && (
-                    <span className="us-dept">Daily Register: {user.registerDepartment || "All departments"}</span>
+                    <span className="us-dept">Daily Register: {registerName(user)}</span>
                   )}
                 </span>
                 <span className={`us-role us-role-${user.role}`}>{roleName(user)}</span>
@@ -433,13 +542,29 @@ export default function Users() {
 
       {adding && (
         <AddUserDialog
-          departments={departments}
-          registerDepartments={registerDepartments}
+          departmentOptions={departmentOptions}
+          registerOptions={registerOptions}
           roles={roles}
           onClose={() => setAdding(false)}
           onSaved={(username) => {
             setAdding(false);
             setNote(`${username} added. Give them their username and password.`);
+            load();
+          }}
+        />
+      )}
+      {editing && (
+        <EditUserDialog
+          user={editing}
+          isMe={editing._id === me._id}
+          departmentOptions={departmentOptions}
+          registerOptions={registerOptions}
+          roles={roles}
+          onClose={() => setEditing(null)}
+          onSaved={(username) => {
+            if (editing._id === me._id) refreshAccess();
+            setEditing(null);
+            setNote(`${username} updated.`);
             load();
           }}
         />

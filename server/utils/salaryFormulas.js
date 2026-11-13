@@ -291,3 +291,28 @@ export function salaryForMonth(employee, year, month) {
 }
 
 
+
+// ---- Family members covered under the employee's ESIC ----------------------
+// Add Employee > Family. Rule: father / mother are covered when older than
+// FAMILY_PARENT_AGE; spouse and children are always covered when listed.
+// Nobody is covered when the employee's own ESIC is not applicable.
+export const FAMILY_RELATIONS = ["Father", "Mother", "Spouse", "Child"];
+export const FAMILY_PARENT_AGE = 60;
+
+// Full years from "DD-MM-YYYY" to `today` (a Date); null when no valid date.
+export function ageOn(dob, today = new Date()) {
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(String(dob ?? ""));
+  if (!m) return null;
+  const [day, month, year] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  let age = today.getFullYear() - year;
+  if (today.getMonth() + 1 < month || (today.getMonth() + 1 === month && today.getDate() < day)) age -= 1;
+  return age >= 0 ? age : null;
+}
+
+// Whether one family member ({ relation, name, dob }) is covered.
+export function familyEsicCovered(member, esicApplicable, today = new Date()) {
+  if (!esicApplicable || !String(member?.name ?? "").trim()) return false;
+  if (member.relation === "Spouse" || member.relation === "Child") return true;
+  const age = ageOn(member.dob, today);
+  return age != null && age > FAMILY_PARENT_AGE;
+}

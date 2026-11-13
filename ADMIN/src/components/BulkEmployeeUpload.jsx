@@ -28,12 +28,14 @@ const HEADINGS = {
   "emergencyContact.relation": "Emergency contact relation",
   "address.line": "Address",
   "address.city": "City",
+  "address.district": "District",
   "address.state": "Address state",
   "address.pin": "PIN code",
   "address.country": "Country",
   permanentSameAsCurrent: "Permanent address same as current (Yes/No)",
   "permanentAddress.line": "Permanent address",
   "permanentAddress.city": "Permanent city",
+  "permanentAddress.district": "Permanent district",
   "permanentAddress.state": "Permanent state",
   "permanentAddress.pin": "Permanent PIN code",
   "permanentAddress.country": "Permanent country",
@@ -147,7 +149,7 @@ function recordFrom(values, departments) {
   }
   // Permanent address: a copy of the current one when "same as current" is Yes,
   // as the form saves it; otherwise its own columns (country India if blank).
-  const addressParts = ["line", "city", "state", "pin", "country"];
+  const addressParts = ["line", "city", "district", "state", "pin", "country"];
   if (v.permanentSameAsCurrent === "Yes") {
     for (const key of addressParts) v[`permanentAddress.${key}`] = v[`address.${key}`];
   } else {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import * as XLSX from "xlsx";
+import { XLSX, loadXlsx } from "../utils/xlsx";
 import api from "../api/axios";
 import Loader from "./Loader";
 
@@ -30,7 +30,8 @@ function fyMonths(fy) {
   });
 }
 
-function exportHeadCount(fy, months, counts) {
+async function exportHeadCount(fy, months, counts) {
+  await loadXlsx();
   const rows = [["Date", "Head Count"]];
   months.forEach((m) => {
     rows.push([m.label, ""]);

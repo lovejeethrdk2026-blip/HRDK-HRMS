@@ -4,11 +4,24 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import EmployeeProfile from "./models/EmployeeProfile.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import {
+  downloadFile,
+  employeeFolder,
+  folderNameOf,
+  isConnected,
+  renameFile,
+  titleWords,
+  trashFile,
+  uploadFile
+} from "../drive/googleDrive.js";
 
-// Employee documents (Add Employee > Documents): PDF / JPG / PNG files kept on
-// disk under server/uploads/employees/<employeeId>/ as
-// EmpCode_EmpName_DocName.pdf, listed in the employee's
-// `documents` array. One file per request, sent as the raw request body.
+// Employee documents (Add Employee > Documents): PDF / JPG / PNG files, one per
+// request as the raw request body, listed in the employee's `documents` array.
+//
+// Where the file goes:
+//   Google Drive connected (Users page) -> hrdk-hrms/10001_RISHIKA_SONI/10001_RISHIKA_SONI_Aadhaar_Card.pdf
+//   not connected                       -> server/uploads/employees/10001/<same name>
+// A document with a driveFileId is in Drive; without one it is on disk.
 
 const UPLOAD_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "uploads", "employees");
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
@@ -30,25 +43,17 @@ function cleanName(name, fallback) {
   return (base || fallback).slice(0, 120);
 }
 
-// "Ramesh kumar" -> "RameshKumar", "Bank passbook / cheque" -> "BankPassbookCheque":
-// one word per part, so "_" only ever splits code, name and document name.
-export function namePart(text) {
-  return String(text || "")
-    .split(/[^A-Za-z0-9]+/)
-    .filter(Boolean)
-    .map((word) => word[0].toUpperCase() + word.slice(1))
-    .join("");
-}
-
-// The saved file's name: EmpCode_EmpName_DocName.pdf, with _2, _3 ... when the
-// employee already has a file by that name (two "Other" documents, say).
-function savedNameOf(employee, title, ext) {
-  const base = [employee.employeeId, namePart(employee.name), namePart(title) || "Document"].join("_");
-  const taken = new Set(employee.documents.map((doc) => doc.fileName.toLowerCase()));
+// The saved file's name: 10001_RISHIKA_SONI_Aadhaar_Card.pdf, with _2, _3 ...
+// when the employee already has a file by that name (two "Other" documents, say).
+function savedNameOf(employee, title, ext, skip = null) {
+  const base = `${folderNameOf(employee)}_${titleWords(title) || "Document"}`;
+  const taken = new Set(employee.documents.filter((doc) => doc !== skip).map((doc) => doc.fileName.toLowerCase()));
   let name = base + ext;
   for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base}_${n}${ext}`;
   return name;
 }
+
+const extOf = (document) => path.extname(document.fileName) || KINDS.find((k) => k.mimeType === document.mimeType)?.ext || "";
 
 async function findEmployee(req, res) {
   const employee = await EmployeeProfile.findOne({ employeeId: req.params.employeeId });
@@ -70,14 +75,22 @@ async function uploadDocument(req, res) {
   // Not cleanName: a title such as "Bank passbook / cheque" keeps its "/".
   const title = String(req.query.title || "").replace(/[^\w ./()-]/g, "").trim().slice(0, 60) || "Document";
   const fileName = savedNameOf(employee, title, kind.ext);
-  const folder = folderOf(employee.employeeId);
-  await fs.mkdir(folder, { recursive: true });
-  await fs.writeFile(path.join(folder, fileName), buffer, { flag: "wx" });
+
+  let driveFileId = "";
+  if (await isConnected()) {
+    const folderId = await employeeFolder(employee);
+    driveFileId = await uploadFile({ name: fileName, mimeType: kind.mimeType, buffer, folderId });
+  } else {
+    const folder = folderOf(employee.employeeId);
+    await fs.mkdir(folder, { recursive: true });
+    await fs.writeFile(path.join(folder, fileName), buffer, { flag: "wx" });
+  }
 
   const document = {
     id: randomUUID(),
     title,
-    fileName, // also its name on disk
+    fileName,
+    driveFileId,
     originalName: cleanName(req.query.fileName, `document${kind.ext}`),
     mimeType: kind.mimeType,
     size: buffer.length,
@@ -104,24 +117,101 @@ async function getDocument(req, res) {
   const document = documentOf(employee, req, res);
   if (!document) return;
   const disposition = req.query.download ? "attachment" : "inline";
-  res.setHeader("Content-Type", document.mimeType);
-  res.setHeader("Content-Disposition", `${disposition}; filename="${document.fileName.replace(/"/g, "")}"`);
-  res.setHeader("X-Content-Type-Options", "nosniff");
+  const headers = () => {
+    res.setHeader("Content-Type", document.mimeType);
+    res.setHeader("Content-Disposition", `${disposition}; filename="${document.fileName.replace(/"/g, "")}"`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+  };
+
+  if (document.driveFileId) {
+    const stream = await downloadFile(document.driveFileId);
+    headers();
+    stream.on("error", () => res.destroy());
+    stream.pipe(res);
+    return;
+  }
+  headers();
   res.sendFile(fileOf(employee, document), (error) => {
     if (error && !res.headersSent) res.status(404).json({ message: "File missing on server" });
   });
 }
 
 // DELETE /api/employees/:employeeId/documents/:documentId
+// A Drive file goes to Drive's bin (restorable there for 30 days).
 async function deleteDocument(req, res) {
   const employee = await findEmployee(req, res);
   if (!employee) return;
   const document = documentOf(employee, req, res);
   if (!document) return;
-  await fs.rm(fileOf(employee, document), { force: true });
+  if (document.driveFileId) await trashFile(document.driveFileId);
+  else await fs.rm(fileOf(employee, document), { force: true });
   employee.documents = employee.documents.filter((doc) => doc.id !== document.id);
   await employee.save();
   res.json({ ok: true });
+}
+
+// After an employee's name changes: rename their Drive folder and every file
+// in it to the new 10001_NEW_NAME prefix. Runs in the background; errors are
+// logged, the employee record is already saved.
+export async function renameInDrive(employee) {
+  try {
+    if (!employee.driveFolderId || !(await isConnected())) return;
+    await renameFile(employee.driveFolderId, folderNameOf(employee));
+    for (const document of employee.documents) {
+      if (!document.driveFileId) continue;
+      const name = savedNameOf(employee, document.title, extOf(document), document);
+      if (name === document.fileName) continue;
+      await renameFile(document.driveFileId, name);
+      document.fileName = name;
+    }
+    await EmployeeProfile.updateOne(
+      { _id: employee._id },
+      { $set: { documents: employee.documents.map((doc) => (doc.toObject ? doc.toObject() : doc)) } }
+    );
+  } catch (error) {
+    console.error(`Drive rename for ${employee.employeeId} failed:`, error.message);
+  }
+}
+
+// ---- moving files already on this PC into Drive (Users page button) ----
+
+const move = { running: false, total: 0, done: 0, failed: [], finishedAt: null };
+export const moveStatus = () => ({ ...move, failed: move.failed.slice(0, 20), failedCount: move.failed.length });
+
+// Uploads every on-disk document to Drive under the new name and points the
+// record at it. The disk copies are left where they are, as a backup.
+export function startMoveToDrive() {
+  if (move.running) return false;
+  Object.assign(move, { running: true, total: 0, done: 0, failed: [], finishedAt: null });
+  (async () => {
+    try {
+      const employees = await EmployeeProfile.find({ "documents.0": { $exists: true } });
+      const todo = employees.filter((emp) => emp.documents.some((doc) => !doc.driveFileId));
+      move.total = todo.reduce((sum, emp) => sum + emp.documents.filter((doc) => !doc.driveFileId).length, 0);
+      for (const employee of todo) {
+        for (const document of employee.documents) {
+          if (document.driveFileId) continue;
+          try {
+            const buffer = await fs.readFile(fileOf(employee, document));
+            const folderId = await employeeFolder(employee);
+            const name = savedNameOf(employee, document.title, extOf(document), document);
+            document.driveFileId = await uploadFile({ name, mimeType: document.mimeType, buffer, folderId });
+            document.fileName = name;
+            await employee.save(); // after each file, so a crash loses nothing
+          } catch (error) {
+            move.failed.push(`${employee.employeeId} ${document.fileName}: ${error.message}`);
+          }
+          move.done++;
+        }
+      }
+    } catch (error) {
+      move.failed.push(error.message);
+    } finally {
+      move.running = false;
+      move.finishedAt = new Date();
+    }
+  })();
+  return true;
 }
 
 const uploadDocumentHandler = asyncHandler(uploadDocument);

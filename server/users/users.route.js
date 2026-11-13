@@ -9,6 +9,7 @@ import {
   changePassword,
   resetPassword,
   deleteUser,
+  updateUser,
   getMe
 } from "./users.controller.js";
 import { isLoggedIn, authorize } from "../middleware/auth.js";
@@ -31,6 +32,9 @@ router.put("/change-password", isLoggedIn, changePassword);
 
 // admin sets a new password for a user who forgot theirs
 router.put("/:id/reset-password", isLoggedIn, authorize("admin"), resetPassword);
+
+// admin edits a user's username, role and departments
+router.put("/:id", isLoggedIn, authorize("admin"), updateUser);
 
 // admin removes a user's login (not their own, not the last admin)
 router.delete("/:id", isLoggedIn, authorize("admin"), deleteUser);

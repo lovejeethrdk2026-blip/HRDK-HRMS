@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import api from "../api/axios";
 import Loader from "../components/Loader";
+import { useAuth } from "../auth/AuthContext";
 
 // Roles & Permissions (admin only, top-right menu): one column per role, one
 // row per permission. Ticking a box saves that role at once (PUT /roles/:name).
-// Admin can always do everything, so its column is fixed.
+// The Admin column hides / shows options for admins too (PUT /roles/admin);
+// admins always see all employees and keep the Users and Roles pages.
 
 // "+ Create role" dialog: POST /roles.
 function CreateRoleDialog({ onSaved, onClose }) {
@@ -67,6 +69,7 @@ export default function Roles() {
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(""); // name of the role being saved
+  const { refreshAccess } = useAuth();
 
   async function load() {
     try {
@@ -101,6 +104,25 @@ export default function Roles() {
     }
   }
 
+  // Admin column: what admins keep. Re-reads this user's access after, so the
+  // menu follows straight away.
+  async function toggleAdmin(key) {
+    const has = data.adminPermissions.includes(key);
+    const permissions = has ? data.adminPermissions.filter((k) => k !== key) : [...data.adminPermissions, key];
+    setData((d) => ({ ...d, adminPermissions: permissions }));
+    setSaving("admin");
+    try {
+      await api.put("/roles/admin", { permissions });
+      setError("");
+      await refreshAccess();
+    } catch (err) {
+      setError(err.response?.data?.message || err.message);
+      load();
+    } finally {
+      setSaving("");
+    }
+  }
+
   function toggle(role, key) {
     const has = role.permissions.includes(key);
     const permissions = has ? role.permissions.filter((k) => k !== key) : [...role.permissions, key];
@@ -114,7 +136,10 @@ export default function Roles() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Roles &amp; Permissions</h1>
-          <p className="page-subtitle">What each role can see and do — tick to change. Saved at once.</p>
+          <p className="page-subtitle">
+            What each role can see and do — tick to change. Saved at once. Admins always keep Users and Roles &amp;
+            Permissions.
+          </p>
         </div>
         <div className="page-header-actions">
           <button type="button" className="btn" onClick={() => setCreating(true)} disabled={!data}>
@@ -140,7 +165,7 @@ export default function Roles() {
                   <th className="rp-perm">Permission</th>
                   <th>
                     <span className="rp-role">Admin</span>
-                    <span className="rp-users">{usersText(data.adminUsers)}</span>
+                    <span className="rp-users">{saving === "admin" ? "Saving…" : usersText(data.adminUsers)}</span>
                   </th>
                   {data.roles.map((role) => (
                     <th key={role.name}>
@@ -154,7 +179,14 @@ export default function Roles() {
               </thead>
               <tbody>
                 {data.permissions.map((group) => (
-                  <PermissionGroup key={group.group} group={group} data={data} onToggle={toggle} onScope={saveRole} />
+                  <PermissionGroup
+                    key={group.group}
+                    group={group}
+                    data={data}
+                    onToggle={toggle}
+                    onToggleAdmin={toggleAdmin}
+                    onScope={saveRole}
+                  />
                 ))}
               </tbody>
             </table>
@@ -177,7 +209,7 @@ export default function Roles() {
 
 // One group: its heading row, then (for Employees) "Which employees they see",
 // then a row per permission.
-function PermissionGroup({ group, data, onToggle, onScope }) {
+function PermissionGroup({ group, data, onToggle, onToggleAdmin, onScope }) {
   const cols = data.roles.length + 2;
   return (
     <>
@@ -211,8 +243,14 @@ function PermissionGroup({ group, data, onToggle, onScope }) {
       {group.items.map((item) => (
         <tr key={item.key}>
           <td className="rp-perm">{item.label}</td>
-          <td className="rp-fixed" aria-label="Admin: allowed">
-            ✓
+          <td>
+            <input
+              type="checkbox"
+              className="rp-check"
+              checked={data.adminPermissions.includes(item.key)}
+              aria-label={`Admin: ${item.label}`}
+              onChange={() => onToggleAdmin(item.key)}
+            />
           </td>
           {data.roles.map((role) => (
             <td key={role.name}>

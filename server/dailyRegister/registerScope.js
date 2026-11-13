@@ -1,9 +1,11 @@
 import User from "../users/models/User.js";
 import Employee from "./models/Employee.js";
+import { registerAccess } from "../users/userAccess.js";
 
-// A user given a "Daily Register department" on the Users page sees only that
-// COSEC department: in the Daily Register, on the Dashboard and on the
-// Employees page. Admins, and users with none set, see everyone.
+// A user given "Daily Register departments" on the Users page sees only those
+// COSEC departments (and, where picked, only those sections): in the Daily
+// Register, on the Dashboard, the Employees page and the Pay Sheets. Admins,
+// and users with none set, see everyone.
 
 // "Electro Forming Department" and "ELECTRO FORMING" are one department.
 export function sameDepartment(a, b) {
@@ -12,12 +14,35 @@ export function sameDepartment(a, b) {
   return Boolean(clean(a)) && clean(a) === clean(b);
 }
 
-// -> null (everyone), or { department, ids: ["10395", ...] } for this request's user.
+// -> null (everyone), or { departments: [{ name, sections }], ids: ["10395", ...] }
+// for this request's user.
 export async function registerScope(req) {
   if (!req.session?.userId || req.session.role === "admin") return null;
-  const user = await User.findById(req.session.userId, { registerDepartment: 1 }).lean();
-  const department = user?.registerDepartment;
-  if (!department) return null;
-  const rows = await Employee.find({ department }, { _id: 0, employeeId: 1 }).lean();
-  return { department, ids: rows.map((row) => String(row.employeeId)) };
+  const user = await User.findById(req.session.userId, {
+    role: 1,
+    registerDepartment: 1,
+    registerDepartments: 1
+  }).lean();
+  const departments = registerAccess(user);
+  if (!departments.length) return null;
+  const rows = await Employee.find(
+    { department: { $in: departments.map((d) => d.name) } },
+    { _id: 0, employeeId: 1, department: 1, section: 1 }
+  ).lean();
+  const ids = rows
+    .filter((row) => {
+      const pick = departments.find((d) => d.name === row.department);
+      return pick && (!pick.sections.length || pick.sections.includes(row.section));
+    })
+    .map((row) => String(row.employeeId));
+  return { departments, ids };
+}
+
+// An Employees-page profile is in scope by its COSEC ID, or (no ID match) by a
+// department picked whole, i.e. with no sections narrowed.
+export function profileInScope(scope, ids, employee) {
+  return (
+    ids.has(String(employee.employeeId)) ||
+    scope.departments.some((d) => !d.sections.length && sameDepartment(employee.department, d.name))
+  );
 }

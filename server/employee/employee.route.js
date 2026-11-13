@@ -12,6 +12,7 @@ import {
 } from "./employee.controller.js";
 import { getSalarySheet } from "./salarySheet.js";
 import { MAX_DOCUMENT_BYTES, deleteDocument, getDocument, uploadDocument } from "./employeeDocuments.js";
+import { isLoggedIn } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -36,12 +37,14 @@ router.post("/:employeeId/rejoin", rejoinEmployee);
 // Undo exit button: an exit entered by mistake.
 router.post("/:employeeId/undo-exit", undoExit);
 // Add Employee > Documents: PDF / JPG / PNG files, one per request as the raw body.
+// Login required: these are Aadhaar / PAN / bank papers.
 router.post(
   "/:employeeId/documents",
+  isLoggedIn,
   express.raw({ type: () => true, limit: MAX_DOCUMENT_BYTES }),
   uploadDocument
 );
-router.get("/:employeeId/documents/:documentId", getDocument);
-router.delete("/:employeeId/documents/:documentId", deleteDocument);
+router.get("/:employeeId/documents/:documentId", isLoggedIn, getDocument);
+router.delete("/:employeeId/documents/:documentId", isLoggedIn, deleteDocument);
 
 export default router;

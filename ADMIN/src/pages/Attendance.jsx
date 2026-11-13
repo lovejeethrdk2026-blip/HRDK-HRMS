@@ -39,7 +39,10 @@ const VIEW_TITLES = {
 export default function Attendance({ view = "detail", onNavigate }) {
   const { user, can } = useAuth(); // Sync and Export show only when the role allows them
   // Users page "Daily Register department": that user sees only this department.
-  const lockedDepartment = user.role !== "admin" ? user.registerDepartment || "" : "";
+  // With one department the filter is locked to it; with several the server
+  // sends only those, and the filter picks among them.
+  const myRegister = user.role !== "admin" ? user.registerDepartments || [] : [];
+  const lockedDepartment = myRegister.length === 1 ? myRegister[0].name : "";
   const mode = view;
   // Night Shift has the same date/month filters as the Daily Register.
   const isDetail = mode === "detail" || mode === "night";

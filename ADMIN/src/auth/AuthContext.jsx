@@ -40,13 +40,26 @@ export function AuthProvider({ children }) {
     setUser(null);
   }
 
-  // May the logged-in user do this? e.g. can("employees.add"). Admin may do everything.
+  // May the logged-in user do this? e.g. can("employees.add"). From their
+  // role on the Roles & Permissions page; admins get everything except what
+  // is hidden for admins there (GET /users/me sends the list for both).
   function can(permission) {
     if (!user) return false;
-    return user.role === "admin" || (user.permissions || []).includes(permission);
+    return (user.permissions || []).includes(permission);
   }
 
-  const value = { user, checking, can, login, logout, logoutAll };
+  // Re-reads what the user may do, e.g. after the admin changes the Admin
+  // column on the Roles & Permissions page.
+  async function refreshAccess() {
+    try {
+      const { data } = await api.get("/users/me");
+      setUser(data);
+    } catch {
+      /* keep what we have */
+    }
+  }
+
+  const value = { user, checking, can, refreshAccess, login, logout, logoutAll };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

@@ -1,20 +1,20 @@
-import { useEffect, useState } from "react";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Suspense, lazy, useEffect, useState } from "react";
 import api from "../api/axios";
 import { useAuth } from "../auth/AuthContext";
 import { isActive } from "../utils/employeeStatus";
 import LivePunches from "../components/LivePunches";
+import { inMyDepartments, myDepartmentNames, myRegisterNames } from "../utils/userScope";
+
+// Fetched while the head count loads, so both arrive together.
+const loadChart = () => import("../components/AttendanceAreaChart");
+const AttendanceAreaChart = lazy(loadChart);
 
 // Dashboard: opens after login. Shows the total employees, from
 // GET /api/employees, today's IN / OUT punches (components/LivePunches.jsx),
 // and a chart of how many punched each day, from the Daily Register head
 // count (GET /api/attendance/headcount).
 
-const TEAL = "#00918a"; // FinancialCharts.jsx PALETTE[0]
-const MUTED = "#3f5c54"; // --text-muted
-const GRID = "#e3efe5"; // --row-line
 const PERIODS = [7, 30, 90]; // days the chart can show
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const pad = (n) => String(n).padStart(2, "0");
 const ddmmyyyy = (d) => `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
@@ -51,6 +51,7 @@ function AttendanceChart() {
   // The days may cross 1 April, so ask for every financial year they touch.
   const years = [...new Set(days.map(fyOf))].join(",");
   useEffect(() => {
+    loadChart();
     let cancelled = false;
     setError("");
     Promise.all(years.split(",").map((fy) => api.get("/attendance/headcount", { params: { fy } })))
@@ -100,44 +101,9 @@ function AttendanceChart() {
         <p className="state-panel">Loading attendance…</p>
       ) : (
         <div className="dash-chart">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={rows} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-              <defs>
-                <linearGradient id="presentFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={TEAL} stopOpacity={0.25} />
-                  <stop offset="100%" stopColor={TEAL} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke={GRID} vertical={false} />
-              <XAxis
-                dataKey="label"
-                tick={{ fill: MUTED, fontSize: 11 }}
-                tickLine={false}
-                axisLine={{ stroke: GRID }}
-                interval={yearView ? 0 : "preserveStartEnd"}
-                ticks={monthTicks}
-                tickFormatter={yearView ? (label) => MONTHS[Number(label.slice(3)) - 1] : undefined}
-                minTickGap={12}
-              />
-              <YAxis allowDecimals={false} tick={{ fill: MUTED, fontSize: 11 }} tickLine={false} axisLine={false} />
-              <Tooltip
-                cursor={{ stroke: GRID }}
-                labelFormatter={(_, items) => items?.[0]?.payload.date}
-                formatter={(value) => [value, "Present"]}
-              />
-              <Area
-                isAnimationActive={false}
-                type="monotone"
-                dataKey="present"
-                name="Present"
-                stroke={TEAL}
-                strokeWidth={2}
-                fill="url(#presentFill)"
-                dot={days.length <= 31 ? { r: 2.5, fill: TEAL, strokeWidth: 0 } : false}
-                activeDot={{ r: 4 }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <Suspense fallback={<p className="state-panel">Loading chart…</p>}>
+            <AttendanceAreaChart rows={rows} yearView={yearView} monthTicks={monthTicks} />
+          </Suspense>
         </div>
       )}
     </section>
@@ -164,7 +130,7 @@ export default function Dashboard() {
   // Those who have left (Inactive on the Employees page) are not counted.
   const ownOnly = user.role !== "admin" && user.employeeScope === "department";
   const total = (employees || []).filter(
-    (employee) => isActive(employee) && (!ownOnly || employee.department === user.department?.name)
+    (employee) => isActive(employee) && (!ownOnly || inMyDepartments(user, employee))
   ).length;
 
   return (
@@ -187,8 +153,8 @@ export default function Dashboard() {
             <div className="kpi-value">{employees ? total : "…"}</div>
             <p className="kpi-sub">
               {ownOnly
-                ? user.department?.name || "Your department"
-                : (user.role !== "admin" && user.registerDepartment) || "All departments"}
+                ? myDepartmentNames(user)
+                : myRegisterNames(user) || "All departments"}
             </p>
             <div className="kpi-rail">
               <span style={{ width: "100%" }} />

@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import { XLSX, loadXlsx } from "./xlsx";
 import { employeeOn, sortableDate } from "@salary";
 
 // Employees page > Download exit report: one row per time someone left
@@ -8,7 +8,8 @@ import { employeeOn, sortableDate } from "@salary";
 const yesNo = (value) => (value == null ? "" : value ? "Yes" : "No");
 
 // Downloads the Exits sheet. Returns how many rows it got (0: no file).
-export function exportExitsToExcel(employees) {
+export async function exportExitsToExcel(employees) {
+  await loadXlsx();
   const rows = [];
   for (const employee of employees) {
     for (const exit of employee.exits || []) {

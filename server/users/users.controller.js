@@ -1,25 +1,19 @@
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import User from "./models/User.js";
-import Department from "../department/models/Department.js";
 import Role from "../roles/models/Role.js";
-import RegisterEmployee from "../dailyRegister/models/Employee.js";
 import { accessFor } from "../roles/roles.controller.js";
+import { departmentAccess, registerAccess, validateAccess } from "./userAccess.js";
 import { ONLINE_MS, clearLastSeen } from "../middleware/lastSeen.js";
 
 // REGISTER - create a new user
 export const register = async (req, res) => {
   try {
-    const { username, password, role, department } = req.body;
-    // admin sees every Daily Register department, so none is kept
-    const registerDepartment = role === "admin" ? "" : String(req.body.registerDepartment || "").trim();
+    const { username, password, role } = req.body;
 
     // 1. all fields are needed (admin has no department: they see everything)
     if (!username || !password || !role) {
       return res.status(400).json({ message: "Username, password and role are required" });
-    }
-    if (role !== "admin" && !department) {
-      return res.status(400).json({ message: "Department is required for this role" });
     }
 
     // role must be "admin" or one from the Roles & Permissions page
@@ -33,32 +27,25 @@ export const register = async (req, res) => {
       return res.status(400).json({ message: "Username already exists" });
     }
 
-    // 3. department is sent by name, e.g. "WAX" (not for admin)
-    let departmentId = undefined;
+    // 3. departments + sub departments, Daily Register departments + sections
+    //    (users/userAccess.js); an admin sees everything, so none are kept
+    let access = { departments: [], registerDepartments: [] };
     if (role !== "admin") {
-      const dept = await Department.findOne({ name: department });
-      if (!dept) {
-        return res.status(400).json({ message: "Department not found" });
+      try {
+        access = await validateAccess(req.body);
+      } catch (error) {
+        return res.status(400).json({ message: error.message });
       }
-      departmentId = dept._id;
-    }
-
-    // Daily Register department is a COSEC department name, e.g. "WAX" (optional)
-    if (registerDepartment && !(await RegisterEmployee.exists({ department: registerDepartment }))) {
-      return res.status(400).json({ message: "Daily Register department not found" });
+      if (!access.departments.length) {
+        return res.status(400).json({ message: "Pick at least one department" });
+      }
     }
 
     // 4. hash the password (never save the real password)
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // 5. save the user
-    const user = await User.create({
-      username,
-      password: hashedPassword,
-      role,
-      department: departmentId,
-      registerDepartment
-    });
+    const user = await User.create({ username, password: hashedPassword, role, ...access });
 
     res.status(201).json({ message: "User registered", userId: user._id });
   } catch (error) {
@@ -77,7 +64,14 @@ export const listUsers = async (req, res) => {
 
     // online = used the app in the last few minutes (middleware/lastSeen.js)
     const since = Date.now() - ONLINE_MS;
-    res.json(users.map((user) => ({ ...user, online: Boolean(user.lastSeenAt && user.lastSeenAt.getTime() > since) })));
+    res.json(
+      users.map((user) => ({
+        ...user,
+        departments: departmentAccess(user),
+        registerDepartments: registerAccess(user),
+        online: Boolean(user.lastSeenAt && user.lastSeenAt.getTime() > since)
+      }))
+    );
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -217,6 +211,74 @@ export const resetPassword = async (req, res) => {
   }
 };
 
+// UPDATE USER - admin changes a user's username, role, department or Daily Register department
+export const updateUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const username = String(req.body.username ?? user.username).trim();
+    const role = String(req.body.role ?? user.role);
+
+    if (!username) {
+      return res.status(400).json({ message: "Username is required" });
+    }
+
+    // 1. admin cannot change their own role (they would lock themselves out)
+    if (user._id.toString() === req.session.userId && role !== user.role) {
+      return res.status(400).json({ message: "You cannot change your own role" });
+    }
+
+    // 2. always keep at least one admin
+    if (user.role === "admin" && role !== "admin" && (await User.countDocuments({ role: "admin" })) <= 1) {
+      return res.status(400).json({ message: "The last admin must stay an admin" });
+    }
+
+    // 3. role must be "admin" or one from the Roles & Permissions page
+    if (role !== "admin" && !(await Role.findOne({ name: role }))) {
+      return res.status(400).json({ message: "Role not found" });
+    }
+
+    // 4. username must not belong to someone else
+    if (username !== user.username && (await User.exists({ username, _id: { $ne: user._id } }))) {
+      return res.status(400).json({ message: "Username already exists" });
+    }
+
+    // 5. departments + sub departments, Daily Register departments + sections
+    let access = { departments: [], registerDepartments: [] };
+    if (role !== "admin") {
+      try {
+        access = await validateAccess(req.body);
+      } catch (error) {
+        return res.status(400).json({ message: error.message });
+      }
+      if (!access.departments.length) {
+        return res.status(400).json({ message: "Pick at least one department" });
+      }
+    }
+
+    user.username = username;
+    user.role = role;
+    user.departments = access.departments;
+    user.registerDepartments = access.registerDepartments;
+    // the old single fields are replaced by the lists above
+    user.department = undefined;
+    user.registerDepartment = "";
+    await user.save();
+
+    // logged-in sessions keep the role, so update it there too
+    await mongoose.connection
+      .collection("sessions")
+      .updateMany({ "session.userId": user._id.toString() }, { $set: { "session.role": role } });
+
+    res.json({ message: `${user.username} updated` });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // DELETE USER - admin removes a user's login
 export const deleteUser = async (req, res) => {
   try {
@@ -256,7 +318,8 @@ export const getMe = async (req, res) => {
     // what this user may do, from their role (Roles & Permissions page)
     const access = await accessFor(user.role);
 
-    res.json({ ...user.toObject(), ...access });
+    const plain = user.toObject();
+    res.json({ ...plain, departments: departmentAccess(plain), registerDepartments: registerAccess(plain), ...access });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

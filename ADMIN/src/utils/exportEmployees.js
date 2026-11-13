@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import { XLSX, loadXlsx } from "./xlsx";
 import { employeeOn, openExitOf, salaryOn, sortableDate, stateHistoryOf } from "@salary";
 import { monthsWorked } from "../components/ChangeHistory";
 import { statusOf } from "./employeeStatus";
@@ -55,11 +55,13 @@ const COLUMNS = [
   ["Emergency contact relation", (e) => e.emergencyContact?.relation, 12],
   ["Address", (e) => e.address?.line, 28],
   ["City", (e) => e.address?.city, 14],
+  ["District", (e) => e.address?.district, 14],
   ["Address state", (e) => e.address?.state, 14],
   ["PIN code", (e) => e.address?.pin, 9],
   ["Country", (e) => e.address?.country, 10],
   ["Permanent address", (e) => e.permanentAddress?.line, 28],
   ["Permanent city", (e) => e.permanentAddress?.city, 14],
+  ["Permanent district", (e) => e.permanentAddress?.district, 14],
   ["Permanent state", (e) => e.permanentAddress?.state, 14],
   ["Permanent PIN", (e) => e.permanentAddress?.pin, 9],
   ["Permanent country", (e) => e.permanentAddress?.country, 10],
@@ -80,7 +82,8 @@ const slug = (text) => String(text ?? "").replace(/[^A-Za-z0-9]+/g, "-").replace
 // revision with the pay before and after), History (every state, department
 // and pay with from / to) and Exits. Salary sheets and pay rows only when the
 // role may see salary.
-export function exportEmployeeToExcel(employee, { seeSalary }) {
+export async function exportEmployeeToExcel(employee, { seeSalary }) {
+  await loadXlsx();
   const workbook = XLSX.utils.book_new();
   const columns = COLUMNS.filter(([, , , kind]) => seeSalary || kind !== "salary");
   addSheet(
@@ -192,7 +195,8 @@ const daysBetween = (from, to) => Math.round((Date.parse(to) - Date.parse(from))
 // joining (or the transfer) to the transfer out, the last working day, or
 // today, and, when the role may see salary, each month's pay worked out in that
 // state. Returns how many files were downloaded.
-export function exportEmployeeStatesToExcel(employee, { seeSalary }) {
+export async function exportEmployeeStatesToExcel(employee, { seeSalary }) {
+  await loadXlsx();
   const today = todayDay();
   const stays = stateHistoryOf(employee).map((stay) => {
     const from = sortableDate(stay.from);
@@ -269,7 +273,8 @@ export function exportEmployeeStatesToExcel(employee, { seeSalary }) {
 
 // Downloads the Employees sheet. label ("Active", "All · CASTING DEPARTMENT")
 // names what was filtered, in the file name.
-export function exportEmployeesToExcel(employees, { seeSalary, label }) {
+export async function exportEmployeesToExcel(employees, { seeSalary, label }) {
+  await loadXlsx();
   const columns = COLUMNS.filter(([, , , kind]) => seeSalary || kind !== "salary");
   const rows = employees.map((employee) => columns.map(([, value]) => value(employee) ?? ""));
   const sheet = XLSX.utils.aoa_to_sheet([columns.map(([heading]) => heading), ...rows]);

@@ -40,6 +40,15 @@ npm run dev
 
 Runs on `http://localhost:5173`, proxies `/api` to the server.
 
+**Faster for everyday use:** build once, then open the app from the server port.
+
+```bash
+cd ADMIN
+npm run build
+```
+
+The server serves `ADMIN/dist` at `http://localhost:3030` (other office PCs: `http://<this-pc-ip>:3030`): bundled, gzipped, and cached by the browser, so it opens much faster than the dev server. Rebuild after changing ADMIN code. Heavy libraries (Excel, PDF, PowerPoint, charts) load only when a page or download button needs them.
+
 ### COSEC data (punches and employee master)
 
 Two databases on the same Atlas cluster, same credentials:

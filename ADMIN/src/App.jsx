@@ -60,7 +60,8 @@ const PAGE_PERMISSION = {
 
 export default function App() {
   const { user, checking, can } = useAuth();
-  const [page, setPage] = useState("");
+  // Back from Google's "Allow" page (?drive=...): open Users, where the Google Drive card is.
+  const [page, setPage] = useState(() => (new URLSearchParams(window.location.search).has("drive") ? "users" : ""));
   const [menuOpen, setMenuOpen] = useState(false); // menu drawer on narrow screens
   if (checking) return <Loader text="Loading…" />;
   if (!user) return <Login />;

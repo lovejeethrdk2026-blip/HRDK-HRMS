@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import { XLSX, loadXlsx } from "./xlsx";
 import { departmentHistoryOf, payHistoryOf, salaryOn, sortableDate, stateHistoryOf } from "@salary";
 
 // Employees page > Download transfer report, read from each employee's
@@ -174,7 +174,8 @@ export function addSheet(workbook, name, header, widths, rows) {
 }
 
 // Downloads both sheets for every employee. Returns how many rows each got.
-export function exportTransfersToExcel(employees) {
+export async function exportTransfersToExcel(employees) {
+  await loadXlsx();
   const transfers = transferRows(employees);
   const history = historyRows(employees);
   const counts = { transfers: transfers.length, history: history.length };

@@ -2956,6 +2956,32 @@ tbody tr:hover td.ps-sticky {
   color: #fff;
 }
 
+/* Add Employee wizard: the step on screen. */
+.ae-step.is-current {
+  background: var(--hover-strong);
+}
+
+.ae-step.is-current .ae-step-title {
+  font-weight: 600;
+}
+
+.ae-step.is-current .ae-step-num {
+  border-color: var(--teal);
+  color: var(--teal);
+  font-weight: 600;
+}
+
+.ae-step.is-current.is-done .ae-step-num {
+  color: #fff;
+}
+
+.ae-step-of {
+  margin-right: 4px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  align-self: center;
+}
+
 .ae-step-text {
   display: flex;
   flex-direction: column;
@@ -6314,4 +6340,461 @@ tbody tr:hover td.ps-sticky {
   .rc-meta {
     white-space: normal;
   }
+}
+
+/* ---- Users page: Google Drive card (components/GoogleDriveCard.jsx) ---- */
+.drive-card {
+  margin-bottom: 16px;
+}
+.drive-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.drive-badge {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--teal-soft);
+  color: var(--teal-deep);
+  font-size: 12px;
+  font-weight: 700;
+}
+.drive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+}
+.drive-actions .kpi-sub {
+  flex: 1 1 220px;
+  margin: 0;
+}
+.drive-note {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--teal-deep);
+  overflow-wrap: anywhere;
+}
+.drive-note-error {
+  color: #b42318;
+}
+@media (max-width: 640px) {
+  .drive-actions .btn {
+    flex: 1 1 100%;
+    justify-content: center;
+    text-align: center;
+  }
+}
+
+/* Add Employee > Family (ESIC) step. */
+.ae-family {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ae-family-rule {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.ae-family-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.ae-family-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 160px 44px 110px 80px;
+  align-items: center;
+  gap: 10px;
+}
+
+.ae-family-head {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.ae-family-rel {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ae-family-age {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.ae-family-cover {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ae-family-cover.is-yes {
+  border-color: var(--teal);
+  background: var(--teal-soft);
+  color: var(--teal);
+  font-weight: 600;
+}
+
+.ae-family-row .ae-field-note {
+  display: block;
+}
+
+.ae-family-remove {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .ae-family-head {
+    display: none;
+  }
+
+  .ae-family-row {
+    grid-template-columns: 1fr 1fr;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+.ae-family-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.ae-family-total {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.ae-family-total.is-ok {
+  color: var(--teal);
+  font-weight: 600;
+}
+
+.ae-family-total.is-bad {
+  color: var(--danger, #b42318);
+  font-weight: 600;
+}
+
+.ae-nominees {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.ae-nominee {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.ae-nominee-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.ae-nominee-name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+/* Narrower screens: Relation, Name, Date of birth, PF share on the first line;
+   age, ESIC cover and Remove under them. */
+@media (max-width: 1280px) {
+  .ae-family-row {
+    grid-template-columns: 100px minmax(0, 1fr) 150px 90px;
+  }
+
+  .ae-family-head {
+    display: none;
+  }
+
+  .ae-family-row:not(.ae-family-head) {
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 760px) {
+  .ae-family-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Add Employee > PF nominee step. */
+.ae-nominee-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ae-nominee-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ae-emergency-pick {
+  margin-top: 14px;
+}
+
+/* Add Employee > Documents: Personal / Father & mother groups. */
+.ae-slot-group + .ae-slot-group {
+  margin-top: 18px;
+}
+
+.ae-slot-group .ae-salary-title {
+  margin: 0 0 10px;
+}
+
+/* ---------- Users page: department + sub department multi-select (DepartmentPicker.jsx) ---------- */
+.dp {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.dp-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.dp-count {
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--teal);
+}
+
+.dp-box {
+  margin: 0 24px;
+  max-height: 230px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--card);
+}
+
+.dp-empty {
+  margin: 0;
+  padding: 12px;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.dp-row + .dp-row {
+  border-top: 1px solid var(--row-line);
+}
+
+.dp-row.is-on {
+  background: var(--hover);
+}
+
+.dp-dept {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  font-size: 13.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.dp-dept input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--teal);
+  cursor: pointer;
+}
+
+.dp-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.dp-row.is-on .dp-name {
+  font-weight: 600;
+}
+
+.dp-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dp-subs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 10px 38px;
+}
+
+.dp-chip {
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--card);
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.dp-chip:hover {
+  border-color: var(--teal);
+  color: var(--text);
+}
+
+.dp-chip[aria-pressed="true"] {
+  border-color: var(--teal);
+  background: var(--teal);
+  color: #fff;
+}
+
+.dp-chip:focus-visible,
+.dp-dept input:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
+.dp + .dp,
+.dp + .cp-note {
+  margin-top: 14px;
+}
+
+.us-dept-list {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* Add user / Edit user: wider, so the department pickers have room */
+.dept-modal.us-user-modal {
+  width: min(860px, 100%);
+}
+
+.us-user-modal .dp-box {
+  max-height: 300px;
+}
+
+/* Add / Edit user: even wider, the two department pickers side by side, and an X to close */
+.dept-modal.us-user-modal {
+  position: relative;
+  width: min(1180px, 100%);
+}
+
+.us-pickers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  margin-top: 4px;
+}
+
+.us-pickers .dp + .dp {
+  margin-top: 0;
+}
+
+.us-pickers .dp:first-child .dp-box {
+  margin-right: 8px;
+}
+
+.us-pickers .dp:last-child .dp-box {
+  margin-left: 8px;
+}
+
+.us-pickers .dp:first-child .dp-legend {
+  padding-right: 8px;
+}
+
+.us-pickers .dp:last-child .dp-legend {
+  padding-left: 8px;
+}
+
+.us-user-modal .dp-box {
+  max-height: 360px;
+}
+
+.us-pickers + .cp-note {
+  margin-top: 12px;
+}
+
+@media (max-width: 860px) {
+  .us-pickers {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .us-pickers .dp:first-child .dp-box,
+  .us-pickers .dp:last-child .dp-box {
+    margin-left: 24px;
+    margin-right: 24px;
+  }
+  .us-pickers .dp:last-child .dp-legend {
+    padding-left: 24px;
+  }
+}
+
+.us-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.us-modal-close:hover {
+  background: var(--hover-strong);
+  color: var(--text);
+}
+
+.us-modal-close:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
+.us-user-modal .cp-note {
+  padding: 0 24px;
 }

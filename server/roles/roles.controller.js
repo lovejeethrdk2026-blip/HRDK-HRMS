@@ -10,9 +10,19 @@ async function makeDefaultRoles() {
   }
 }
 
-// What a role may do: { permissions, employeeScope }. Admin may do everything.
+// Options the admin has hidden for admins (Roles & Permissions page).
+async function adminHidden() {
+  const doc = await Role.findOne({ name: "admin" }).lean();
+  return doc?.hidden || [];
+}
+
+// What a role may do: { permissions, employeeScope }. Admin may do everything
+// except the options hidden for admins.
 export async function accessFor(roleName) {
-  if (roleName === "admin") return { permissions: ALL_KEYS, employeeScope: "all" };
+  if (roleName === "admin") {
+    const hidden = await adminHidden();
+    return { permissions: ALL_KEYS.filter((key) => !hidden.includes(key)), employeeScope: "all" };
+  }
   const role = await Role.findOne({ name: roleName });
   if (!role) return { permissions: [], employeeScope: "department" };
   return { permissions: role.permissions, employeeScope: role.employeeScope };
@@ -22,7 +32,8 @@ export async function accessFor(roleName) {
 export const listRoles = async (req, res) => {
   try {
     await makeDefaultRoles();
-    const roles = await Role.find().sort({ createdAt: 1 }).lean();
+    const roles = await Role.find({ name: { $ne: "admin" } }).sort({ createdAt: 1 }).lean();
+    const hidden = await adminHidden();
 
     // users per role, e.g. { admin: 1, manager: 3 }
     const counts = {};
@@ -33,6 +44,7 @@ export const listRoles = async (req, res) => {
       permissions: PERMISSIONS,
       employeeScopes: EMPLOYEE_SCOPES,
       adminUsers: counts.admin || 0,
+      adminPermissions: ALL_KEYS.filter((key) => !hidden.includes(key)),
       roles: roles.map((role) => ({ ...role, users: counts[role.name] || 0 }))
     });
   } catch (error) {
@@ -67,6 +79,19 @@ export const createRole = async (req, res) => {
 // PUT /api/roles/:name - save what a role may do: { permissions: [...], employeeScope }
 export const updateRole = async (req, res) => {
   try {
+    // Admin: { permissions } is what admins keep; the rest is stored as hidden.
+    if (req.params.name === "admin") {
+      const { permissions } = req.body;
+      if (!Array.isArray(permissions)) return res.status(400).json({ message: "permissions must be a list" });
+      const hidden = ALL_KEYS.filter((key) => !permissions.includes(key));
+      await Role.updateOne(
+        { name: "admin" },
+        { $set: { hidden }, $setOnInsert: { label: "Admin", employeeScope: "all", permissions: [] } },
+        { upsert: true }
+      );
+      return res.json({ name: "admin", permissions: ALL_KEYS.filter((key) => !hidden.includes(key)) });
+    }
+
     const role = await Role.findOne({ name: req.params.name });
     if (!role) {
       return res.status(404).json({ message: "Role not found" });
