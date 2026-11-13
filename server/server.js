@@ -21,6 +21,7 @@ import { startPaySheetWarmup } from "./paySheet/paySheet.controller.js";
 import userRoutes from "./users/users.route.js";
 import roleRoutes from "./roles/roles.route.js";
 import driveRoutes from "./drive/drive.route.js";
+import leaveRoutes from "./leave/leave.route.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 import { trackLastSeen } from "./middleware/lastSeen.js";
 
@@ -43,6 +44,7 @@ app.use("/api/departments", departmentRoutes);
 app.use("/api/paysheets", paySheetRoutes);
 // Google Drive for employee documents (Users page).
 app.use("/api/drive", driveRoutes);
+app.use("/api/leave", leaveRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });

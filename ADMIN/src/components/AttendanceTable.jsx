@@ -207,6 +207,15 @@ export default function AttendanceTable({
                       Night
                     </span>
                   )}
+                  {doc.leave && (
+                    <span
+                      className="pill pill-good pill-night"
+                      title={`Approved leave (${doc.leave.type}${doc.leave.half ? ", half day" : ""}), from the Leave page`}
+                    >
+                      {doc.leave.type}
+                      {doc.leave.half ? " ½" : ""}
+                    </span>
+                  )}
                 </td>
                 {!hideName && <td className="col-name">{doc.NAME}</td>}
                 {register && <td className="col-name">{doc.department || "–"}</td>}

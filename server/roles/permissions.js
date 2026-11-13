@@ -28,6 +28,15 @@ export const PERMISSIONS = [
     ]
   },
   {
+    group: "Leave",
+    items: [
+      { key: "leave.view", label: "See leave applications and balances" },
+      { key: "leave.apply", label: "Apply leave for employees" },
+      { key: "leave.approve", label: "Approve, reject and cancel leave" },
+      { key: "leave.manage", label: "Edit leave types and balances" }
+    ]
+  },
+  {
     group: "Pay Sheet",
     items: [
       { key: "paysheet.view", label: "See salary summary, detail and loans" },
@@ -62,6 +71,9 @@ export const DEFAULT_ROLES = [
       "attendance.sync",
       "attendance.export",
       "attendance.nightshift",
+      "leave.view",
+      "leave.apply",
+      "leave.approve",
       "paysheet.view"
     ]
   },

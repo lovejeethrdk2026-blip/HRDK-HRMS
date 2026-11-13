@@ -87,7 +87,9 @@ export const MENU = [
           { key: "attendance", label: "Daily Register" },
           { key: "nightShift", label: "Night Shift" }
         ]
-      }
+      },
+      // Apply / approve leave, balances, leave types (pages/Leave.jsx).
+      { key: "leave", label: "Leave", icon: "ledger" }
     ]
   },
   {

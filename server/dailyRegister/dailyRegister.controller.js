@@ -7,6 +7,7 @@ import { applyNightShift, nightShiftIds } from "./nightShift.js";
 import NightShiftStaff from "./models/NightShiftStaff.js";
 import { employeeMaster, monthRecords } from "./attendanceCache.js";
 import { employeeShifts } from "./employeeShifts.js";
+import { approvedLeaveDays } from "../leave/leaveDays.js";
 
 // "YYYY-MM-DD" -> "DD-MM-YYYY"
 function toDisplayDate(isoDate) {
@@ -33,7 +34,7 @@ const PAIR_KEY = /^pair\d+$/;
 // department, date and punch pairs -- no timestamps or whatever else COSEC
 // left on the document. Department comes from the employee master copy.
 async function toRegisterRows(records) {
-  const [master, shifts] = await Promise.all([employeeMaster(), employeeShifts()]);
+  const [master, shifts, leave] = await Promise.all([employeeMaster(), employeeShifts(), approvedLeaveDays()]);
 
   return records.map((record) => {
     const employee = master.get(String(record.ID)) || {};
@@ -56,11 +57,20 @@ async function toRegisterRows(records) {
     // late / early / full day against it (ADMIN utils/attendanceStats.js).
     const shift = shifts.get(String(record.ID));
     if (shift) row.shift = shift;
+    // Approved leave that day (Leave page): { type: "CL", half: false }.
+    const onLeave = leave.get(`${record.ID}|${record.Date}`);
+    if (onLeave) row.leave = onLeave;
     for (const key of Object.keys(record)) {
       if (PAIR_KEY.test(key)) row[key] = record[key];
     }
     return row;
   });
+}
+
+// employeeId -> name from the COSEC master copy, for leave rows without punches.
+async function employeeNames() {
+  const rows = await Employee.find({}, { _id: 0, employeeId: 1, name: 1 }).lean();
+  return new Map(rows.map((row) => [String(row.employeeId), row.name || ""]));
 }
 
 async function getAttendance(req, res) {
@@ -81,12 +91,20 @@ async function getAttendance(req, res) {
     const [y, m] = (month || date).split("-"); // "YYYY-MM" or "YYYY-MM-DD"
     const day = month ? null : toDisplayDate(date);
     const ids = scope ? new Set(scope.ids) : null;
-    const records = (await monthRecords(m, y)).filter(
-      (r) =>
-        (!day || r.Date === day) &&
-        (!employeeId || String(r.ID) === String(employeeId)) &&
-        (!ids || ids.has(String(r.ID)))
-    );
+    const wanted = (id, rowDate) =>
+      (!day || rowDate === day) &&
+      (!employeeId || String(id) === String(employeeId)) &&
+      (!ids || ids.has(String(id)));
+    const records = (await monthRecords(m, y)).filter((r) => wanted(r.ID, r.Date));
+    // An employee on approved leave who did not punch gets a row too, so the
+    // register shows the leave instead of leaving them out.
+    const have = new Set(records.map((r) => `${r.ID}|${r.Date}`));
+    const names = await employeeNames();
+    for (const key of (await approvedLeaveDays()).keys()) {
+      const [id, rowDate] = key.split("|");
+      if (rowDate.slice(3) !== `${m}-${y}` || have.has(key) || !wanted(id, rowDate)) continue;
+      records.push({ ID: id, NAME: names.get(id) || "", Date: rowDate });
+    }
     records.sort((a, b) => {
       if (a.ID !== b.ID) return a.ID < b.ID ? -1 : 1;
       return dateSortKey(a.Date) - dateSortKey(b.Date);

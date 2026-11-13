@@ -14,6 +14,7 @@ const BulkStateChange = lazy(() => import("./pages/BulkStateChange"));
 const Attendance = lazy(() => import("./pages/Attendance"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Departments = lazy(() => import("./pages/Departments"));
+const Leave = lazy(() => import("./pages/Leave"));
 const EmpCost = lazy(() => import("./pages/EmpCost"));
 const Employees = lazy(() => import("./pages/Employees"));
 const FinancialSummary = lazy(() => import("./pages/FinancialSummary"));
@@ -28,6 +29,7 @@ const PAGES = {
   attendanceAll: (props) => <Attendance view="latest" {...props} />,
   headCount: (props) => <Attendance view="headcount" {...props} />,
   nightShift: (props) => <Attendance view="night" {...props} />,
+  leave: Leave,
   employees: Employees,
   addEmployee: AddEmployee,
   bulkIncrement: BulkIncrement,
@@ -51,6 +53,7 @@ const PAGE_PERMISSION = {
   attendanceAll: "attendance.view",
   headCount: "attendance.view",
   nightShift: "attendance.view",
+  leave: "leave.view",
   employees: "employees.view",
   addEmployee: "employees.add",
   bulkIncrement: "employees.transfer",
