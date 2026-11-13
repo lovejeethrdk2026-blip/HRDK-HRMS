@@ -9,6 +9,8 @@ import Login from "./pages/Login";
 // does not wait for every page (and the Excel / PowerPoint libraries).
 const AddEmployee = lazy(() => import("./pages/AddEmployee"));
 const BulkIncrement = lazy(() => import("./pages/BulkIncrement"));
+const BulkDepartmentChange = lazy(() => import("./pages/BulkDepartmentChange"));
+const BulkStateChange = lazy(() => import("./pages/BulkStateChange"));
 const Attendance = lazy(() => import("./pages/Attendance"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Departments = lazy(() => import("./pages/Departments"));
@@ -29,6 +31,8 @@ const PAGES = {
   employees: Employees,
   addEmployee: AddEmployee,
   bulkIncrement: BulkIncrement,
+  bulkDepartmentChange: BulkDepartmentChange,
+  bulkStateChange: BulkStateChange,
   departments: Departments,
   reportingChart: ReportingChart,
   paySheet1: () => <PaySheets sheetKey="paySheet1" />,
@@ -50,6 +54,8 @@ const PAGE_PERMISSION = {
   employees: "employees.view",
   addEmployee: "employees.add",
   bulkIncrement: "employees.transfer",
+  bulkDepartmentChange: "employees.transfer",
+  bulkStateChange: "employees.transfer",
   departments: "departments.view",
   reportingChart: "employees.view",
   paySheet1: "paysheet.view",

@@ -6,6 +6,8 @@ import {
   rejoinEmployee,
   reviseSalary,
   bulkReviseSalary,
+  bulkTransferDepartment,
+  bulkTransferState,
   transferDepartment,
   transferEmployee,
   undoExit,
@@ -47,6 +49,10 @@ router.post("/:employeeId/salary-revision", reviseSalary);
 // Before "/:employeeId/..." routes would not clash, but kept here with the
 // other salary routes. Signed in, with "Salary revision and transfers".
 router.post("/bulk-salary-revision", isLoggedIn, allowed("employees.transfer"), bulkReviseSalary);
+// Employees > Department change: move many employees to one department at once.
+router.post("/bulk-department-transfer", isLoggedIn, allowed("employees.transfer"), bulkTransferDepartment);
+// Employees > State change: move many employees to one state at once.
+router.post("/bulk-state-transfer", isLoggedIn, allowed("employees.transfer"), bulkTransferState);
 // Exit button on an Employees card: they left (record kept, histories closed).
 router.post("/:employeeId/exit", exitEmployee);
 // Rejoin button on a left employee's card: same code, histories open again.

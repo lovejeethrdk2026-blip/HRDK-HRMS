@@ -7330,3 +7330,20 @@ tbody tr:hover td.ps-sticky {
     width: 100%;
   }
 }
+
+/* Department change (pages/BulkDepartmentChange.jsx) uses the Bulk increment
+   styles; its wider fields: */
+.bi-panel-fields .bd-wide {
+  width: 260px;
+}
+
+.bi-panel-fields .bd-mid {
+  width: 180px;
+}
+
+@media (max-width: 720px) {
+  .bi-panel-fields .bd-wide,
+  .bi-panel-fields .bd-mid {
+    width: 100%;
+  }
+}

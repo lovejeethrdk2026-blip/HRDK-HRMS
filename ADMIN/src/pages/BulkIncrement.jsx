@@ -158,7 +158,7 @@ export default function BulkIncrement() {
     <div className="bi-page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Bulk increment</h1>
+          <h1 className="page-title">Salary increment</h1>
           <p className="page-subtitle">
             Set the raise in the bar on top, tick employees below, and save it for all of them at once.
           </p>

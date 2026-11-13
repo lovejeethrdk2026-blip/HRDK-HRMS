@@ -535,16 +535,27 @@ async function transferEmployee(req, res) {
 
   const employee = await EmployeeProfile.findOne({ employeeId: req.params.employeeId });
   if (!employee) return res.status(404).json({ message: `Employee ${req.params.employeeId} not found` });
-  if (leftMessage(employee)) return res.status(400).json({ message: leftMessage(employee) });
+
+  const problem = moveState(employee, { state, city, effectiveDate, remark });
+  if (problem) return res.status(400).json({ message: problem });
+  await employee.save();
+  res.json(employee.toObject());
+}
+
+// Moves one employee (a loaded document, not saved here) to another state from
+// effectiveDate: ends the current stay the day before, starts the new one, and
+// works the salary split out again for the new state. -> "" or the problem.
+function moveState(employee, { state, city, effectiveDate, remark }) {
+  if (leftMessage(employee)) return leftMessage(employee);
 
   const history = stateHistoryOf(employee.toObject()).map((stay) => ({ ...stay }));
   const current = history.at(-1);
   if (state.toLowerCase() === String(current.state).trim().toLowerCase()) {
-    return res.status(400).json({ message: `${employee.name} already works in ${current.state}` });
+    return `${employee.name} already works in ${current.state}`;
   }
   if (sortableDate(effectiveDate) <= sortableDate(current.from)) {
     const since = history.length > 1 ? "their last transfer" : "joining";
-    return res.status(400).json({ message: `Effective date must be after ${since} (${current.from})` });
+    return `Effective date must be after ${since} (${current.from})`;
   }
 
   current.to = dayBefore(effectiveDate);
@@ -553,8 +564,69 @@ async function transferEmployee(req, res) {
   employee.stateHistory = history;
   employee.state = state;
   employee.salary = salaryStructure({ ...employee.toObject(), state });
-  await employee.save();
-  res.json(employee.toObject());
+  return "";
+}
+
+// POST /api/employees/bulk-state-transfer  (Employees > State change)
+// Body { employeeIds: [...], state, city, effectiveDate ("DD-MM-YYYY"),
+// remark, dryRun }. Moves every ticked employee to one state (and city) from
+// one date; PT and the minimum wage follow the new state from then. Each is
+// saved on its own; one failing does not stop the rest. dryRun: check only.
+// -> { results: [{ employeeId, name, from, ok, message }] }
+async function bulkTransferState(req, res) {
+  const body = bodyOf(req);
+  const ids = [...new Set((Array.isArray(body.employeeIds) ? body.employeeIds : []).map((id) => String(id).trim()))].filter(
+    Boolean
+  );
+  const [state, city, effectiveDate, remark] = ["state", "city", "effectiveDate", "remark"].map((key) =>
+    String(body[key] ?? "").trim()
+  );
+  const dryRun = Boolean(body.dryRun);
+
+  if (!ids.length) return res.status(400).json({ message: "Pick at least one employee" });
+  if (ids.length > 1000) return res.status(400).json({ message: "At most 1000 employees at once" });
+  if (!state) return res.status(400).json({ message: "New state is required" });
+  if (!isDate(effectiveDate)) return res.status(400).json({ message: "Effective date must be a date like 01-08-2026" });
+
+  let employees = await EmployeeProfile.find({ employeeId: { $in: ids } });
+  // A user limited to some Daily Register departments may move only those.
+  const scope = await registerScope(req);
+  if (scope) {
+    const scopeIds = new Set(scope.ids);
+    employees = employees.filter((employee) => profileInScope(scope, scopeIds, employee));
+  }
+  const byId = new Map(employees.map((employee) => [employee.employeeId, employee]));
+
+  const results = [];
+  for (const employeeId of ids) {
+    const employee = byId.get(employeeId);
+    if (!employee) {
+      results.push({ employeeId, name: "", from: "", ok: false, message: "Not found" });
+      continue;
+    }
+    const row = { employeeId, name: employee.name, from: employee.state || "", ok: false, message: "" };
+    results.push(row);
+    const problem = moveState(employee, {
+      state,
+      city,
+      effectiveDate,
+      remark: remark ? `Bulk move - ${remark}` : "Bulk move"
+    });
+    if (problem) {
+      row.message = problem;
+      continue;
+    }
+    if (!dryRun) {
+      try {
+        await employee.save();
+      } catch (error) {
+        row.message = error.message;
+        continue;
+      }
+    }
+    row.ok = true;
+  }
+  res.json({ dryRun, results });
 }
 
 // POST /api/employees/:employeeId/department-transfer  Body { department,
@@ -582,35 +654,59 @@ async function transferDepartment(req, res) {
   if (error) return res.status(400).json({ message: error });
 
   // Only the Department tab's departments and their own sub departments.
-  const listed = await Department.findOne({ name: department }).lean();
-  if (!listed) return res.status(400).json({ message: `Department "${department}" is not in the Department tab` });
-  const subs = listed.subDepartments || [];
-  if (subs.length && !subs.includes(subDepartment)) {
-    return res.status(400).json({ message: `Pick a sub department of ${department}` });
-  }
-  if (!subs.length && subDepartment) {
-    return res.status(400).json({ message: `${department} has no sub departments` });
-  }
+  const listProblem = await departmentProblem(department, subDepartment);
+  if (listProblem) return res.status(400).json({ message: listProblem });
 
   const employee = await EmployeeProfile.findOne({ employeeId: req.params.employeeId });
   if (!employee) return res.status(404).json({ message: `Employee ${req.params.employeeId} not found` });
-  if (leftMessage(employee)) return res.status(400).json({ message: leftMessage(employee) });
+
+  const problem = moveDepartment(employee, {
+    department,
+    subDepartment,
+    designation,
+    reportingManager,
+    newCtc,
+    effectiveDate,
+    remark
+  });
+  if (problem) return res.status(400).json({ message: problem });
+  await employee.save();
+  res.json(employee.toObject());
+}
+
+// Checks the Department tab's list: "" when department / subDepartment are
+// fine, else the message. Shared by the single and the bulk move.
+async function departmentProblem(department, subDepartment) {
+  const listed = await Department.findOne({ name: department }).lean();
+  if (!listed) return `Department "${department}" is not in the Department tab`;
+  const subs = listed.subDepartments || [];
+  if (subs.length && !subs.includes(subDepartment)) return `Pick a sub department of ${department}`;
+  if (!subs.length && subDepartment) return `${department} has no sub departments`;
+  return "";
+}
+
+// Moves one employee (a loaded document, not saved here) to a department from
+// effectiveDate: closes the current spell the day before, opens the new one;
+// designation and reporting manager stay as they were when blank, and a new
+// CTC (one that differs) starts a new pay the same day. -> "" or the problem.
+function moveDepartment(employee, { department, subDepartment, designation, reportingManager, newCtc, effectiveDate, remark }) {
+  if (leftMessage(employee)) return leftMessage(employee);
 
   const spells = departmentHistoryOf(employee.toObject()).map((spell) => ({ ...spell }));
   const current = spells.at(-1);
   if (department === current.department && subDepartment === (current.subDepartment || "")) {
     const where = [department, subDepartment].filter(Boolean).join(" · ");
-    return res.status(400).json({ message: `${employee.name} already works in ${where}` });
+    return `${employee.name} already works in ${where}`;
   }
   if (sortableDate(effectiveDate) <= sortableDate(current.from)) {
     const since = spells.length > 1 ? "their last department transfer" : "joining";
-    return res.status(400).json({ message: `Effective date must be after ${since} (${current.from})` });
+    return `Effective date must be after ${since} (${current.from})`;
   }
 
   // A new CTC (one that differs) starts a new pay on the same date.
   if (newCtc != null && newCtc !== employee.monthlyCtc) {
     const problem = startPay(employee, { ctc: newCtc, effectiveDate, kind: "department", remark });
-    if (problem) return res.status(400).json({ message: problem });
+    if (problem) return problem;
   }
 
   // The spell being closed keeps its reporting manager (older spells were
@@ -627,8 +723,86 @@ async function transferDepartment(req, res) {
 
   employee.departmentHistory = spells;
   employee.set(next);
-  await employee.save();
-  res.json(employee.toObject());
+  return "";
+}
+
+// POST /api/employees/bulk-department-transfer  (Employees > Department change)
+// Body { employeeIds: [...], department, subDepartment, designation,
+// reportingManager, effectiveDate ("DD-MM-YYYY"), remark, dryRun }.
+// Moves every ticked employee to one department / sub department from one
+// date; designation and reporting manager change only when given. Each is
+// saved on its own; one failing does not stop the rest. dryRun: check only.
+// -> { results: [{ employeeId, name, from, ok, message }] }
+async function bulkTransferDepartment(req, res) {
+  const body = bodyOf(req);
+  const ids = [...new Set((Array.isArray(body.employeeIds) ? body.employeeIds : []).map((id) => String(id).trim()))].filter(
+    Boolean
+  );
+  const [department, subDepartment, designation, reportingManager, effectiveDate, remark] = [
+    "department",
+    "subDepartment",
+    "designation",
+    "reportingManager",
+    "effectiveDate",
+    "remark"
+  ].map((key) => String(body[key] ?? "").trim());
+  const dryRun = Boolean(body.dryRun);
+
+  if (!ids.length) return res.status(400).json({ message: "Pick at least one employee" });
+  if (ids.length > 1000) return res.status(400).json({ message: "At most 1000 employees at once" });
+  if (!department) return res.status(400).json({ message: "New department is required" });
+  if (!isDate(effectiveDate)) return res.status(400).json({ message: "Effective date must be a date like 01-08-2026" });
+  const listProblem = await departmentProblem(department, subDepartment);
+  if (listProblem) return res.status(400).json({ message: listProblem });
+
+  let employees = await EmployeeProfile.find({ employeeId: { $in: ids } });
+  // A user limited to some Daily Register departments may move only those.
+  const scope = await registerScope(req);
+  if (scope) {
+    const scopeIds = new Set(scope.ids);
+    employees = employees.filter((employee) => profileInScope(scope, scopeIds, employee));
+  }
+  const byId = new Map(employees.map((employee) => [employee.employeeId, employee]));
+
+  const results = [];
+  for (const employeeId of ids) {
+    const employee = byId.get(employeeId);
+    if (!employee) {
+      results.push({ employeeId, name: "", from: "", ok: false, message: "Not found" });
+      continue;
+    }
+    const row = {
+      employeeId,
+      name: employee.name,
+      from: [employee.department, employee.subDepartment].filter(Boolean).join(" · "),
+      ok: false,
+      message: ""
+    };
+    results.push(row);
+    const problem = moveDepartment(employee, {
+      department,
+      subDepartment,
+      designation,
+      reportingManager,
+      newCtc: null,
+      effectiveDate,
+      remark: remark ? `Bulk move - ${remark}` : "Bulk move"
+    });
+    if (problem) {
+      row.message = problem;
+      continue;
+    }
+    if (!dryRun) {
+      try {
+        await employee.save();
+      } catch (error) {
+        row.message = error.message;
+        continue;
+      }
+    }
+    row.ok = true;
+  }
+  res.json({ dryRun, results });
 }
 
 const EXIT_TYPES = ["Resigned", "Terminated", "Retired", "Absconding", "Death", "Contract end"];
@@ -779,6 +953,8 @@ const transferEmployeeHandler = asyncHandler(transferEmployee);
 const transferDepartmentHandler = asyncHandler(transferDepartment);
 const reviseSalaryHandler = asyncHandler(reviseSalary);
 const bulkReviseSalaryHandler = asyncHandler(bulkReviseSalary);
+const bulkTransferDepartmentHandler = asyncHandler(bulkTransferDepartment);
+const bulkTransferStateHandler = asyncHandler(bulkTransferState);
 const exitEmployeeHandler = asyncHandler(exitEmployee);
 const rejoinEmployeeHandler = asyncHandler(rejoinEmployee);
 const undoExitHandler = asyncHandler(undoExit);
@@ -792,6 +968,8 @@ export {
   transferDepartmentHandler as transferDepartment,
   reviseSalaryHandler as reviseSalary,
   bulkReviseSalaryHandler as bulkReviseSalary,
+  bulkTransferDepartmentHandler as bulkTransferDepartment,
+  bulkTransferStateHandler as bulkTransferState,
   updateEmployeeHandler as updateEmployee,
   listEmployeesHandler as listEmployees
 };

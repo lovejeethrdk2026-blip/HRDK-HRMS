@@ -62,7 +62,9 @@ export const MENU = [
         items: [
           { key: "addEmployee", label: "Add Employee" },
           { key: "employees", label: "All Employees" },
-          { key: "bulkIncrement", label: "Bulk increment" }
+          { key: "bulkIncrement", label: "Salary increment" },
+          { key: "bulkDepartmentChange", label: "Department change" },
+          { key: "bulkStateChange", label: "State change" }
         ]
       },
       // Department -> sub-department -> employees, from the COSEC master.
