@@ -1,5 +1,6 @@
 import Attendance from "./models/Attendance.js";
 import NightShiftStaff from "./models/NightShiftStaff.js";
+import { employeeShifts, shiftCutoff } from "./employeeShifts.js";
 
 // Night shift employees work across midnight (e.g. 21:00 -> 06:00), but COSEC
 // day records are cut at midnight, which splits one shift over two rows. For
@@ -42,14 +43,17 @@ function punchesOf(doc) {
 
 // One employee's day records -> noon-to-noon shift records { ID, NAME, Date, pair1, ... },
 // oldest first, punches re-paired IN/OUT from the start of each shift.
-export function toShiftRecords(docs) {
+// cutoff: punches before this time belong to the previous day's shift (noon,
+// or the middle of the time off for an employee whose own shift crosses
+// midnight, employeeShifts.js).
+export function toShiftRecords(docs, cutoff = NIGHT_CUTOFF) {
   const punches = docs
     .flatMap((doc) => punchesOf(doc).map((time) => ({ date: doc.Date, time })))
     .sort((a, b) => dateKey(a.date) - dateKey(b.date) || a.time.localeCompare(b.time));
 
   const shifts = new Map();
   for (const punch of punches) {
-    const shiftDate = punch.time < NIGHT_CUTOFF ? addDays(punch.date, -1) : punch.date;
+    const shiftDate = punch.time < cutoff ? addDays(punch.date, -1) : punch.date;
     if (!shifts.has(shiftDate)) shifts.set(shiftDate, []);
     shifts.get(shiftDate).push(punch.time);
   }
@@ -70,8 +74,17 @@ export function toShiftRecords(docs) {
 // too, so a shift that ends (or began) on a day outside `records` is whole.
 // latest: keep only each night employee's newest shift (the "All Employees
 // (Latest)" view); otherwise keep the shifts whose date `records` had.
+// Night employees are the ticked ones plus everyone whose shift (Add Employee >
+// Employee shift) crosses midnight, e.g. 20:00 -> 03:00.
 export async function applyNightShift(records, { latest = false } = {}) {
-  const night = await nightShiftIds([...new Set(records.map((r) => String(r.ID)))]);
+  const ids = [...new Set(records.map((r) => String(r.ID)))];
+  const [night, shifts] = await Promise.all([nightShiftIds(ids), employeeShifts()]);
+  const cutoffs = new Map();
+  for (const id of ids) {
+    const cutoff = shiftCutoff(shifts.get(id));
+    if (cutoff && !night.has(id)) cutoffs.set(id, cutoff);
+    if (cutoff) night.add(id);
+  }
   if (!night.size) return records;
 
   const byEmployee = new Map();
@@ -96,7 +109,7 @@ export async function applyNightShift(records, { latest = false } = {}) {
   const shiftRecords = new Map();
   for (const [id, docs] of byEmployee) {
     const wanted = new Set(docs.filter((doc) => !extra.includes(doc)).map((doc) => doc.Date));
-    let shifts = toShiftRecords(docs);
+    let shifts = toShiftRecords(docs, cutoffs.get(id));
     shifts = latest ? shifts.slice(-1) : shifts.filter((shift) => wanted.has(shift.Date));
     shiftRecords.set(id, shifts);
   }

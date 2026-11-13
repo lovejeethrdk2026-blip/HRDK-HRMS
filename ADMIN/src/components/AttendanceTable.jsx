@@ -1,12 +1,17 @@
 import { Fragment } from "react";
 import {
   FULL_DAY_HOURS,
+  GRACE_MINUTES,
   pairsOf,
   punchCount,
   lunchText,
   lunchRange,
   totalWorkingText,
-  vsFullDayText
+  vsFullDayText,
+  shiftText,
+  fullDayText,
+  lateText,
+  earlyOutText
 } from "../utils/attendanceStats";
 
 // Some days have dozens of punches (someone passing a reader all day long);
@@ -116,9 +121,26 @@ export default function AttendanceTable({
                 <th
                   rowSpan={2}
                   className="col-total"
-                  title={`Total Working against a ${FULL_DAY_HOURS}-hour day: + extra, - short`}
+                  title={`Total Working against a full day: the employee's shift length (less 1 hour lunch for a day shift over 13:00-15:00), or ${FULL_DAY_HOURS} hours without a shift. + extra, - short`}
                 >
-                  vs {FULL_DAY_HOURS} Hours
+                  vs Full Day
+                </th>
+                <th rowSpan={2} className="col-total" title="Add Employee > Employee shift (In–Out)">
+                  Shift
+                </th>
+                <th
+                  rowSpan={2}
+                  className="col-total"
+                  title={`First IN after the shift In, beyond ${GRACE_MINUTES} minutes grace`}
+                >
+                  Late
+                </th>
+                <th
+                  rowSpan={2}
+                  className="col-total"
+                  title={`Last OUT before the shift Out, beyond ${GRACE_MINUTES} minutes grace`}
+                >
+                  Early Out
                 </th>
               </>
             )}
@@ -170,6 +192,9 @@ export default function AttendanceTable({
             const total = totalWorkingText(doc);
             const punches = punchCount(doc);
             const vsFullDay = register ? vsFullDayText(doc) : "";
+            const shift = register ? shiftText(doc) : "";
+            const late = register ? lateText(doc) : "";
+            const earlyOut = register ? earlyOutText(doc) : "";
             return (
               <tr
                 key={doc._id || `${doc.ID}-${doc.Date}`}
@@ -212,9 +237,13 @@ export default function AttendanceTable({
                       className={`col-total ${
                         vsFullDay.startsWith("-") ? "hours-short" : vsFullDay.startsWith("+") ? "hours-extra" : ""
                       } ${vsFullDay ? "" : "punch-empty"}`}
+                      title={`Full day: ${fullDayText(doc)}`}
                     >
                       {vsFullDay || "–"}
                     </td>
+                    <td className={`col-total ${shift ? "" : "punch-empty"}`}>{shift || "–"}</td>
+                    <td className={`col-total ${late ? "hours-short" : "punch-empty"}`}>{late || "–"}</td>
+                    <td className={`col-total ${earlyOut ? "hours-short" : "punch-empty"}`}>{earlyOut || "–"}</td>
                   </>
                 )}
                 {pairCols.map((n) => {

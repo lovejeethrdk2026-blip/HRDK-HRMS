@@ -120,12 +120,95 @@ export function lunchRange(doc) {
   return `${hhmm(lunch.out)} – ${lunch.in ? hhmm(lunch.in) : "…"}`;
 }
 
-// Worked time against FULL_DAY_HOURS: "+0:30" over, "-1:15" short, "0:00"
-// exactly; "" while still clocked in (the day isn't over) or nothing to add up.
+// ---------- Shift (Add Employee > Employee shift, doc.shift { in, out } "HH:mm") ----------
+
+// Coming in or going out within this many minutes of the shift time is on time.
+export const GRACE_MINUTES = 10;
+
+const DAY = 24 * 3600;
+
+// The row's shift, or null when the employee has none: { in, out } as
+// seconds since midnight, length in seconds (past midnight when Out < In).
+function shiftOf(doc) {
+  const start = toSeconds(doc.shift?.in);
+  const end = toSeconds(doc.shift?.out);
+  if (start === null || end === null || start === end) return null;
+  return { in: start, out: end, length: (end - start + DAY) % DAY };
+}
+
+// "09:30–18:30", or "" without a shift.
+export function shiftText(doc) {
+  return shiftOf(doc) ? `${doc.shift.in}–${doc.shift.out}` : "";
+}
+
+// Seconds of work that make a full day. With a shift: its length, less one
+// hour for lunch when it is a day shift spanning the 13:00–15:00 lunch window
+// (09:30–18:30 -> 8 hours; 20:00–03:00 -> 7 hours). Without: FULL_DAY_HOURS.
+export function fullDaySeconds(doc) {
+  const shift = shiftOf(doc);
+  if (!shift) return FULL_DAY_HOURS * 3600;
+  const lunch = shift.out > shift.in && shift.in <= toSeconds(LUNCH_START) && shift.out >= toSeconds(LUNCH_END);
+  return Math.max(0, shift.length - (lunch ? 3600 : 0));
+}
+
+// "8:00": the full day this row is measured against.
+export function fullDayText(doc) {
+  return formatDuration(fullDaySeconds(doc));
+}
+
+// The day's first IN and last OUT as seconds ({ first, last }, null when missing).
+function firstAndLast(doc) {
+  const pairs = pairsOf(doc);
+  const ins = pairs.map((pair) => toSeconds(pair.IN)).filter((s) => s !== null);
+  const outs = pairs.map((pair) => toSeconds(pair.OUT)).filter((s) => s !== null);
+  return { first: ins.length ? ins[0] : null, last: outs.length ? outs[outs.length - 1] : null };
+}
+
+// b - a in seconds, folded into -12h..+12h, so 03:10 vs 03:00 is +10 minutes
+// on a night shift whatever the date.
+function clockDiff(a, b) {
+  return ((b - a + DAY + DAY / 2) % DAY) - DAY / 2;
+}
+
+// Seconds the first IN came after the shift In, past the grace time; 0 when on
+// time, null without a shift or an IN.
+export function lateSeconds(doc) {
+  const shift = shiftOf(doc);
+  const { first } = firstAndLast(doc);
+  if (!shift || first === null) return null;
+  const late = clockDiff(shift.in, first);
+  return late > GRACE_MINUTES * 60 ? late : 0;
+}
+
+// Seconds the last OUT came before the shift Out, past the grace time; 0 when
+// on time, null without a shift, an OUT, or while still clocked in.
+export function earlyOutSeconds(doc) {
+  const shift = shiftOf(doc);
+  const { last } = firstAndLast(doc);
+  if (!shift || last === null || totalWorking(doc).open) return null;
+  const early = clockDiff(last, shift.out);
+  return early > GRACE_MINUTES * 60 ? early : 0;
+}
+
+// "0:22" late, "" when on time or not known.
+export function lateText(doc) {
+  const late = lateSeconds(doc);
+  return late ? formatDuration(late) : "";
+}
+
+// "1:30" left early, "" when on time or not known.
+export function earlyOutText(doc) {
+  const early = earlyOutSeconds(doc);
+  return early ? formatDuration(early) : "";
+}
+
+// Worked time against the row's full day (fullDaySeconds): "+0:30" over,
+// "-1:15" short, "0:00" exactly; "" while still clocked in (the day isn't
+// over) or nothing to add up.
 export function vsFullDayText(doc) {
   const total = totalWorking(doc);
   if (!total.hasAny || total.open) return "";
-  const diff = total.seconds - FULL_DAY_HOURS * 3600;
+  const diff = total.seconds - fullDaySeconds(doc);
   const text = formatDuration(Math.abs(diff));
   if (diff > 0) return `+${text}`;
   return diff < 0 ? `-${text}` : text;

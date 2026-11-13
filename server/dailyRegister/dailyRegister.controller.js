@@ -6,6 +6,7 @@ import { registerScope } from "./registerScope.js";
 import { applyNightShift, nightShiftIds } from "./nightShift.js";
 import NightShiftStaff from "./models/NightShiftStaff.js";
 import { employeeMaster, monthRecords } from "./attendanceCache.js";
+import { employeeShifts } from "./employeeShifts.js";
 
 // "YYYY-MM-DD" -> "DD-MM-YYYY"
 function toDisplayDate(isoDate) {
@@ -32,7 +33,7 @@ const PAIR_KEY = /^pair\d+$/;
 // department, date and punch pairs -- no timestamps or whatever else COSEC
 // left on the document. Department comes from the employee master copy.
 async function toRegisterRows(records) {
-  const master = await employeeMaster();
+  const [master, shifts] = await Promise.all([employeeMaster(), employeeShifts()]);
 
   return records.map((record) => {
     const employee = master.get(String(record.ID)) || {};
@@ -51,6 +52,10 @@ async function toRegisterRows(records) {
     };
     // Night shift rows run noon to noon (nightShift.js).
     if (record.nightShift) row.nightShift = true;
+    // Add Employee > Employee shift { in, out } ("HH:mm"): the UI measures
+    // late / early / full day against it (ADMIN utils/attendanceStats.js).
+    const shift = shifts.get(String(record.ID));
+    if (shift) row.shift = shift;
     for (const key of Object.keys(record)) {
       if (PAIR_KEY.test(key)) row[key] = record[key];
     }

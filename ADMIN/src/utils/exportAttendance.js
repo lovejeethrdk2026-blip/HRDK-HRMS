@@ -1,11 +1,14 @@
 import { XLSX, loadXlsx } from "./xlsx";
 import {
-  FULL_DAY_HOURS,
   punchCount,
   lunchText,
   lunchRange,
   totalWorkingText,
-  vsFullDayText
+  vsFullDayText,
+  shiftText,
+  fullDayText,
+  lateText,
+  earlyOutText
 } from "./attendanceStats";
 
 const PAIR_KEY = /^pair(\d+)$/;
@@ -20,7 +23,8 @@ function pairNumbers(doc) {
 // Builds the same rows/columns AttendanceTable renders (Employee ID, Name,
 // Date, then IN/OUT per pair) and downloads them as an .xlsx file.
 // register: the Daily Register's slim layout -- Employee ID, Name, Department, Section,
-// Date, Total Punches, Lunch Break, Total Working, vs 8 Hours and the IN/OUT
+// Shift, Date, Total Punches, Lunch Break, Total Working, Full Day, vs Full Day,
+// Late, Early Out and the IN/OUT
 // pairs only.
 export async function exportAttendanceToExcel(records, filename = "attendance", { register = false } = {}) {
   await loadXlsx();
@@ -43,7 +47,10 @@ export async function exportAttendanceToExcel(records, filename = "attendance", 
       "Lunch (13:00-15:00)",
       "Lunch Break",
       "Total Working",
-      `vs ${FULL_DAY_HOURS} Hours`
+      "Full Day",
+      "vs Full Day",
+      "Late",
+      "Early Out"
     ];
     pairCols.forEach((n) => header.push(`Pair ${n} IN`, `Pair ${n} OUT`));
     const rows = records.map((doc) => {
@@ -52,14 +59,17 @@ export async function exportAttendanceToExcel(records, filename = "attendance", 
         doc.NAME,
         doc.department || "",
         doc.subDepartment || "",
-        doc.nightShift ? "Night" : "",
+        [shiftText(doc), doc.nightShift ? "Night" : ""].filter(Boolean).join(" "),
         ...(withStatus ? [doc.status || ""] : []),
         doc.Date,
         punchCount(doc),
         lunchRange(doc),
         lunchText(doc),
         totalWorkingText(doc),
-        vsFullDayText(doc)
+        fullDayText(doc),
+        vsFullDayText(doc),
+        lateText(doc),
+        earlyOutText(doc)
       ];
       pairCols.forEach((n) => {
         const pair = doc[`pair${n}`];
