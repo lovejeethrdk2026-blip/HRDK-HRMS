@@ -7371,3 +7371,10 @@ tbody tr:hover td.ps-sticky {
 .lv-inactive td { opacity: 0.55; }
 .lv-add { margin-top: 14px; }
 .lv-page textarea.dept-modal-input { resize: vertical; font: inherit; }
+
+/* Last Punch column: IN / OUT after the time, smaller. */
+.att-table td .last-punch-type {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  opacity: 0.7;
+}

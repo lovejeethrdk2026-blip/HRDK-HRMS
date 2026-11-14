@@ -4,6 +4,12 @@ import {
   GRACE_MINUTES,
   pairsOf,
   punchCount,
+  lastPunch,
+  directionKnown,
+  outsideText,
+  unaccountedText,
+  missedText,
+  areaPunchText,
   lunchText,
   lunchRange,
   totalWorkingText,
@@ -110,13 +116,44 @@ export default function AttendanceTable({
                 </th>
                 <th
                   rowSpan={2}
+                  className="col-total"
+                  title="Machine: IN/OUT from the ENTRY / EXIT machines. Guess: no gate machine recorded for the day, so IN/OUT alternate in time order."
+                >
+                  IN/OUT
+                </th>
+                <th
+                  rowSpan={2}
                   className="col-lunch"
                   title="How long the time out (OUT punch to the next IN) touching 13:00-15:00 was; hover a cell for its times"
                 >
                   Lunch Break (13:00–15:00)
                 </th>
+                <th rowSpan={2} className="col-total" title="The day's final punch, also when it is past the pair columns shown">
+                  Last Punch
+                </th>
                 <th rowSpan={2} className="col-total" title="Sum of every completed IN → OUT pair">
                   Total Working
+                </th>
+                <th
+                  rowSpan={2}
+                  className="col-total"
+                  title="Time between an EXIT punch and the next ENTRY punch at the main gate (rows with machine IN/OUT only)"
+                >
+                  Outside
+                </th>
+                <th
+                  rowSpan={2}
+                  className="col-total"
+                  title="Main gate punches that are missing: an EXIT with no ENTRY before it (came in without punching), or an ENTRY with no EXIT after it"
+                >
+                  Missed
+                </th>
+                <th
+                  rowSpan={2}
+                  className="col-total"
+                  title="Time between gate punches that can't be counted as inside or outside because a punch is missing (EXIT then EXIT, or ENTRY then ENTRY). Total Working + Outside + Unaccounted = first to last gate punch."
+                >
+                  Unaccounted
                 </th>
                 <th
                   rowSpan={2}
@@ -192,6 +229,11 @@ export default function AttendanceTable({
             const total = totalWorkingText(doc);
             const punches = punchCount(doc);
             const vsFullDay = register ? vsFullDayText(doc) : "";
+            const last = register ? lastPunch(doc) : null;
+            const outside = register ? outsideText(doc) : "";
+            const missed = register ? missedText(doc) : "";
+            const unaccounted = register ? unaccountedText(doc) : "";
+            const area = areaPunchText(doc);
             const shift = register ? shiftText(doc) : "";
             const late = register ? lateText(doc) : "";
             const earlyOut = register ? earlyOutText(doc) : "";
@@ -237,11 +279,30 @@ export default function AttendanceTable({
                 {showDate && <td>{doc.Date}</td>}
                 {register && (
                   <>
-                    <td className={`col-punches ${punches ? "" : "punch-empty"}`}>{punches}</td>
+                    <td className={`col-punches ${punches ? "" : "punch-empty"}`} title={area ? `Other machines: ${area}` : undefined}>
+                      {punches}
+                    </td>
+                    <td className={`col-total ${directionKnown(doc) ? "" : "punch-empty"}`}>
+                      {directionKnown(doc) ? "Machine" : "Guess"}
+                    </td>
                     <td className={`col-lunch ${lunch ? "" : "punch-empty"}`} title={lunchRange(doc)}>
                       {lunch || "–"}
                     </td>
+                    <td className={`col-total ${last ? "" : "punch-empty"}`}>
+                      {last ? (
+                        <>
+                          {last.time} <span className="last-punch-type">{last.type}</span>
+                        </>
+                      ) : (
+                        "–"
+                      )}
+                    </td>
                     <td className={`col-total ${total ? "" : "punch-empty"}`}>{total || "–"}</td>
+                    <td className={`col-total ${outside && outside !== "0:00" ? "hours-short" : "punch-empty"}`}>{outside || "–"}</td>
+                    <td className={`col-total ${missed ? "hours-short" : "punch-empty"}`}>{missed || "–"}</td>
+                    <td className={`col-total ${unaccounted && unaccounted !== "0:00" ? "hours-short" : "punch-empty"}`}>
+                      {unaccounted || "–"}
+                    </td>
                     <td
                       className={`col-total ${
                         vsFullDay.startsWith("-") ? "hours-short" : vsFullDay.startsWith("+") ? "hours-extra" : ""

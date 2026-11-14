@@ -7,6 +7,7 @@ import { applyNightShift, nightShiftIds } from "./nightShift.js";
 import NightShiftStaff from "./models/NightShiftStaff.js";
 import { employeeMaster, monthRecords } from "./attendanceCache.js";
 import { employeeShifts } from "./employeeShifts.js";
+import { deviceName } from "./devices.js";
 import { approvedLeaveDays } from "../leave/leaveDays.js";
 
 // "YYYY-MM-DD" -> "DD-MM-YYYY"
@@ -53,6 +54,12 @@ async function toRegisterRows(records) {
     };
     // Night shift rows run noon to noon (nightShift.js).
     if (record.nightShift) row.nightShift = true;
+    // "device": IN/OUT from the ENTRY / EXIT machines; "guess": alternated
+    // (no machine recorded). Punches at other machines, with their names.
+    row.direction = record.direction || "guess";
+    if (record.areaPunches?.length) {
+      row.areaPunches = record.areaPunches.map((punch) => ({ time: punch.time, device: deviceName(punch.device) }));
+    }
     // Add Employee > Employee shift { in, out } ("HH:mm"): the UI measures
     // late / early / full day against it (ADMIN utils/attendanceStats.js).
     const shift = shifts.get(String(record.ID));

@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "HRDK",
+    "slug": "hrdk-emp-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "in.hrdk.emp"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0F6E56",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "in.hrdk.emp"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-secure-store"
+    ],
+    "scheme": "hrdk",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F6E56"
+    },
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}

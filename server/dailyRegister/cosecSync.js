@@ -33,6 +33,7 @@ import CosecEmployee from "./models/CosecEmployee.js";
 import CosecDayRecord from "./models/CosecDayRecord.js";
 import Employee from "./models/Employee.js";
 import { COSEC_DB_NAME } from "../config/cosecDb.js";
+import { gateDirection } from "./devices.js";
 
 const STATE_NAME = "cosecPunches";
 const TIME_ZONE = process.env.PUNCH_TIME_ZONE || "UTC";
@@ -110,8 +111,27 @@ function startOfWallClockDay(date) {
 
 // ---------- building day records ----------
 
-// punches: rows with { employeeId, employeeName, punchTime } in any order.
-// Returns one Attendance document per (employee, wall-clock day).
+// IN/OUT pairs from punches that each know their direction: an IN opens a
+// pair; an OUT closes the open pair, or stands alone (IN missing) when there
+// is none. Two INs in a row leave the first pair without an OUT.
+function pairByDirection(punches) {
+  const pairs = [];
+  for (const { time, type } of punches) {
+    const open = pairs[pairs.length - 1];
+    if (type === "OUT" && open && open.IN && !open.OUT) open.OUT = time;
+    else pairs.push(type === "IN" ? { IN: time } : { OUT: time });
+  }
+  return pairs;
+}
+
+// punches: rows with { employeeId, employeeName, punchTime, deviceId } in any
+// order. Returns one Attendance document per (employee, wall-clock day).
+//
+// Direction: on a day with punches at the main gate machines (devices.js),
+// ENTRY punches are IN and EXIT punches OUT ("direction: device"); punches at
+// other machines are kept apart as areaPunches. A day without any gate punch
+// (no machine recorded yet, or a branch reader only) falls back to guessing:
+// IN, OUT, IN, OUT ... in time order ("direction: guess").
 function buildDayRecords(punches, nameOf) {
   const groups = new Map(); // "ID|DD-MM-YYYY" -> { doc fields..., times: [Date] }
 
@@ -134,24 +154,46 @@ function buildDayRecords(punches, nameOf) {
       };
       groups.set(key, group);
     }
-    group.times.push(time);
+    group.times.push({ time, device: punch.deviceId != null && punch.deviceId !== "" ? String(punch.deviceId) : "" });
   }
 
   const docs = [];
   for (const group of groups.values()) {
-    group.times.sort((a, b) => a - b);
+    group.times.sort((a, b) => a.time - b.time);
 
-    // Drop taps that follow the previous kept punch too closely.
+    // Drop taps that follow the previous kept punch at the same machine too
+    // closely (double taps). ENTRY then EXIT a minute apart are both kept.
     const kept = [];
-    for (const time of group.times) {
-      if (!kept.length || time - kept[kept.length - 1] >= DUPLICATE_WINDOW_MS) kept.push(time);
+    const lastAt = new Map(); // device -> time of its last kept punch
+    for (const punch of group.times) {
+      const previous = lastAt.get(punch.device);
+      if (previous && punch.time - previous < DUPLICATE_WINDOW_MS) continue;
+      kept.push(punch);
+      lastAt.set(punch.device, punch.time);
     }
 
     const doc = { ID: group.ID, NAME: group.NAME, Date: group.Date, sortDate: group.sortDate };
-    kept.forEach((time, i) => {
-      const pairKey = `pair${Math.floor(i / 2) + 1}`;
-      const pair = doc[pairKey] || (doc[pairKey] = {});
-      pair[i % 2 === 0 ? "IN" : "OUT"] = timeOf(wallClockParts(time));
+    const clock = (time) => timeOf(wallClockParts(time));
+    const gate = kept
+      .map((punch) => ({ ...punch, type: gateDirection(punch.device) }))
+      .filter((punch) => punch.type);
+
+    let pairs;
+    if (gate.length) {
+      doc.direction = "device";
+      pairs = pairByDirection(gate.map((punch) => ({ time: clock(punch.time), type: punch.type })));
+      const area = kept.filter((punch) => !gateDirection(punch.device));
+      if (area.length) doc.areaPunches = area.map((punch) => ({ time: clock(punch.time), device: punch.device }));
+    } else {
+      doc.direction = "guess";
+      pairs = [];
+      kept.forEach((punch, i) => {
+        if (i % 2 === 0) pairs.push({ IN: clock(punch.time) });
+        else pairs[pairs.length - 1].OUT = clock(punch.time);
+      });
+    }
+    pairs.forEach((pair, i) => {
+      doc[`pair${i + 1}`] = pair;
     });
     docs.push(doc);
   }
@@ -328,7 +370,7 @@ async function loadEmployees() {
 
 // ---------- the sync itself ----------
 
-const PUNCH_FIELDS = { _id: 0, employeeId: 1, employeeName: 1, punchTime: 1, syncedAt: 1, createdAt: 1 };
+const PUNCH_FIELDS = { _id: 0, employeeId: 1, employeeName: 1, punchTime: 1, deviceId: 1, syncedAt: 1, createdAt: 1 };
 
 // When the external puller wrote this row. Rows it wrote before it started
 // stamping syncedAt fall back to createdAt.

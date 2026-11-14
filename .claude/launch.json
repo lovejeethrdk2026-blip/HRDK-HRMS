@@ -22,6 +22,15 @@
         "dev"
       ],
       "port": 5173
+    },
+    {
+      "name": "emp-app-web",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd HRDK-EMP-APP && npx expo start --web --port 8090"
+      ],
+      "port": 8090
     }
   ]
 }

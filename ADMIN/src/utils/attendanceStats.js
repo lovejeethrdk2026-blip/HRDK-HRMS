@@ -19,9 +19,27 @@ export function pairsOf(doc) {
     .map((n) => doc[`pair${n}`] || {});
 }
 
-// Every IN and OUT value recorded for the day, across all pairs.
+// The day's final punch, { time, type: "IN" | "OUT" }, or null when none.
+// The register shows only the first pairs, so this keeps the leaving time
+// visible on days with many punches.
+export function lastPunch(doc) {
+  let last = null;
+  for (const pair of pairsOf(doc)) {
+    if (pair.IN) last = { time: pair.IN, type: "IN" };
+    if (pair.OUT) last = { time: pair.OUT, type: "OUT" };
+  }
+  return last;
+}
+
+// Every punch recorded for the day: gate IN/OUT across all pairs, plus
+// punches at other machines (areaPunches).
 export function punchCount(doc) {
-  return pairsOf(doc).reduce((sum, pair) => sum + (pair.IN ? 1 : 0) + (pair.OUT ? 1 : 0), 0);
+  return pairsOf(doc).reduce((sum, pair) => sum + (pair.IN ? 1 : 0) + (pair.OUT ? 1 : 0), 0) + (doc.areaPunches?.length || 0);
+}
+
+// "11:02 LIBRARY, 14:30 G FOAM": punches at machines other than the gate.
+export function areaPunchText(doc) {
+  return (doc.areaPunches || []).map((punch) => `${hhmm(punch.time)} ${punch.device}`).join(", ");
 }
 
 function toSeconds(time) {
@@ -80,24 +98,120 @@ export function lunchBreak(doc) {
   return null;
 }
 
-// Sum of every completed IN -> OUT pair. open: an IN without an OUT yet.
-// On a night shift row (noon to noon, server nightShift.js) an OUT earlier
-// than its IN is after midnight: 21:00 -> 06:00 is 9 hours.
+// ---------- IN / OUT from the gate machines ----------
+
+// True when the row's IN/OUT came from the ENTRY / EXIT machines (server
+// dailyRegister/devices.js); false when they were guessed by alternating.
+export const directionKnown = (doc) => doc.direction === "device";
+
+// "DD-MM-YYYY" -> YYYYMMDD
+const dayNumber = (date) => {
+  const [d, m, y] = String(date || "").split("-");
+  return Number(`${y}${m}${d}`);
+};
+
+// Is the row's day (or night shift) finished, so an IN without an OUT is a
+// missed EXIT punch rather than someone still inside?
+function dayIsOver(doc) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const today = Number(`${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`);
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const yesterdayNum = Number(`${yesterday.getFullYear()}${pad(yesterday.getMonth() + 1)}${pad(yesterday.getDate())}`);
+  // A night shift dated yesterday can still be running until noon today.
+  return dayNumber(doc.Date) < (doc.nightShift ? yesterdayNum : today);
+}
+
+// Gate punches that are missing on a direction-known row:
+// entry: an EXIT with no ENTRY before it (came back in without punching);
+// exit: an ENTRY with no EXIT after it (left without punching), not counting
+// the last one while the day is still running.
+export function missedPunches(doc) {
+  if (!directionKnown(doc)) return { entry: 0, exit: 0 };
+  const pairs = pairsOf(doc);
+  let entry = 0;
+  let exit = 0;
+  pairs.forEach((pair, i) => {
+    if (pair.OUT && !pair.IN) entry++;
+    if (pair.IN && !pair.OUT && (i < pairs.length - 1 || dayIsOver(doc))) exit++;
+  });
+  return { entry, exit };
+}
+
+// "No ENTRY ×2, No EXIT" or "".
+export function missedText(doc) {
+  const { entry, exit } = missedPunches(doc);
+  const part = (n, label) => (n ? `${label}${n > 1 ? ` ×${n}` : ""}` : "");
+  return [part(entry, "No ENTRY"), part(exit, "No EXIT")].filter(Boolean).join(", ");
+}
+
+// Time spent outside between leaving (EXIT) and coming back (next ENTRY),
+// only where both punches exist. null on a guessed row.
+export function outsideSeconds(doc) {
+  if (!directionKnown(doc)) return null;
+  const pairs = pairsOf(doc);
+  let seconds = 0;
+  for (let i = 0; i < pairs.length - 1; i++) {
+    const outAt = toSeconds(pairs[i].OUT);
+    const backAt = toSeconds(pairs[i + 1].IN);
+    if (outAt === null || backAt === null) continue;
+    seconds += backAt >= outAt ? backAt - outAt : doc.nightShift ? backAt + 24 * 3600 - outAt : 0;
+  }
+  return seconds;
+}
+
+// Time between gate punches that can't be called inside or outside because a
+// punch is missing: EXIT followed by another EXIT (came back without an ENTRY
+// punch), or ENTRY followed by another ENTRY. With Total Working and Outside
+// it adds up to the time from the first to the last gate punch. null on a
+// guessed row.
+export function unaccountedSeconds(doc) {
+  if (!directionKnown(doc)) return null;
+  const pairs = pairsOf(doc);
+  let seconds = 0;
+  for (let i = 0; i < pairs.length - 1; i++) {
+    if (pairs[i].OUT && pairs[i + 1].IN) continue; // that gap is Outside
+    const from = toSeconds(pairs[i].OUT || pairs[i].IN);
+    const to = toSeconds(pairs[i + 1].IN || pairs[i + 1].OUT);
+    if (from === null || to === null) continue;
+    seconds += to >= from ? to - from : doc.nightShift ? to + 24 * 3600 - from : 0;
+  }
+  return seconds;
+}
+
+// "1:01", "0:00", or "" on a guessed row.
+export function unaccountedText(doc) {
+  const seconds = unaccountedSeconds(doc);
+  return seconds === null ? "" : formatDuration(seconds);
+}
+
+// "1:25", "0:00", or "" on a guessed row.
+export function outsideText(doc) {
+  const seconds = outsideSeconds(doc);
+  return seconds === null ? "" : formatDuration(seconds);
+}
+
+// Sum of every completed IN -> OUT pair. open: an IN without an OUT yet --
+// on a direction-known row only while its day is still running (after that
+// it is a missed EXIT, missedPunches). On a night shift row (noon to noon,
+// server nightShift.js) an OUT earlier than its IN is after midnight:
+// 21:00 -> 06:00 is 9 hours.
 export function totalWorking(doc) {
   let seconds = 0;
   let open = false;
+  const pairs = pairsOf(doc);
 
-  for (const pair of pairsOf(doc)) {
+  pairs.forEach((pair, i) => {
     const inAt = toSeconds(pair.IN);
     const outAt = toSeconds(pair.OUT);
-    if (inAt === null) continue;
+    if (inAt === null) return;
     if (outAt === null) {
-      open = true;
-      continue;
+      if (!directionKnown(doc) || (i === pairs.length - 1 && !dayIsOver(doc))) open = true;
+      return;
     }
     if (outAt >= inAt) seconds += outAt - inAt;
     else if (doc.nightShift) seconds += outAt + 24 * 3600 - inAt;
-  }
+  });
 
   return { seconds, open, hasAny: seconds > 0 || open };
 }

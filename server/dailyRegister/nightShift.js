@@ -32,13 +32,16 @@ function addDays(displayDate, days) {
   return `${pad(date.getUTCDate())}-${pad(date.getUTCMonth() + 1)}-${date.getUTCFullYear()}`;
 }
 
-// A day record's punches in the order they were made.
+// A day record's punches in the order they were made: [{ time, type }].
 function punchesOf(doc) {
   return Object.keys(doc)
     .filter((key) => PAIR_KEY.test(key))
     .sort((a, b) => Number(a.match(PAIR_KEY)[1]) - Number(b.match(PAIR_KEY)[1]))
-    .flatMap((key) => [doc[key]?.IN, doc[key]?.OUT])
-    .filter((time) => typeof time === "string" && time);
+    .flatMap((key) => [
+      { time: doc[key]?.IN, type: "IN" },
+      { time: doc[key]?.OUT, type: "OUT" }
+    ])
+    .filter((punch) => typeof punch.time === "string" && punch.time);
 }
 
 // One employee's day records -> noon-to-noon shift records { ID, NAME, Date, pair1, ... },
@@ -46,25 +49,41 @@ function punchesOf(doc) {
 // cutoff: punches before this time belong to the previous day's shift (noon,
 // or the middle of the time off for an employee whose own shift crosses
 // midnight, employeeShifts.js).
+// Day records whose IN/OUT came from the gate machines keep that direction;
+// guessed ones are paired IN, OUT, IN, OUT ... again from the shift's start.
 export function toShiftRecords(docs, cutoff = NIGHT_CUTOFF) {
-  const punches = docs
-    .flatMap((doc) => punchesOf(doc).map((time) => ({ date: doc.Date, time })))
-    .sort((a, b) => dateKey(a.date) - dateKey(b.date) || a.time.localeCompare(b.time));
+  const known = docs.some((doc) => doc.direction === "device");
+  const shiftOf = (date, time) => (time < cutoff ? addDays(date, -1) : date);
+  const byDate = (a, b) => dateKey(a.date) - dateKey(b.date) || a.time.localeCompare(b.time);
+
+  const punches = docs.flatMap((doc) => punchesOf(doc).map((punch) => ({ ...punch, date: doc.Date }))).sort(byDate);
+  const area = docs
+    .flatMap((doc) => (doc.areaPunches || []).map((punch) => ({ ...punch, date: doc.Date })))
+    .sort(byDate);
 
   const shifts = new Map();
   for (const punch of punches) {
-    const shiftDate = punch.time < cutoff ? addDays(punch.date, -1) : punch.date;
+    const shiftDate = shiftOf(punch.date, punch.time);
     if (!shifts.has(shiftDate)) shifts.set(shiftDate, []);
-    shifts.get(shiftDate).push(punch.time);
+    shifts.get(shiftDate).push(punch);
   }
 
-  return [...shifts.entries()].map(([shiftDate, times]) => {
-    const record = { ID: docs[0].ID, NAME: docs[0].NAME, Date: shiftDate, nightShift: true };
-    times.forEach((time, i) => {
-      const pairKey = `pair${Math.floor(i / 2) + 1}`;
-      const pair = record[pairKey] || (record[pairKey] = {});
-      pair[i % 2 === 0 ? "IN" : "OUT"] = time;
+  return [...shifts.entries()].map(([shiftDate, list]) => {
+    const record = { ID: docs[0].ID, NAME: docs[0].NAME, Date: shiftDate, nightShift: true, direction: known ? "device" : "guess" };
+    const pairs = [];
+    list.forEach((punch, i) => {
+      if (known) {
+        const open = pairs[pairs.length - 1];
+        if (punch.type === "OUT" && open && open.IN && !open.OUT) open.OUT = punch.time;
+        else pairs.push({ [punch.type]: punch.time });
+      } else if (i % 2 === 0) pairs.push({ IN: punch.time });
+      else pairs[pairs.length - 1].OUT = punch.time;
     });
+    pairs.forEach((pair, i) => {
+      record[`pair${i + 1}`] = pair;
+    });
+    const shiftArea = area.filter((punch) => shiftOf(punch.date, punch.time) === shiftDate);
+    if (shiftArea.length) record.areaPunches = shiftArea.map(({ time, device }) => ({ time, device }));
     return record;
   });
 }

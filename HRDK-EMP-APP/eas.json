@@ -1,0 +1,19 @@
+{
+  "cli": { "appVersionSource": "remote" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": { "EXPO_PUBLIC_API_URL": "http://192.168.1.32:3030", "EXPO_PUBLIC_DEMO": "0" }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": { "buildType": "apk" },
+      "env": { "EXPO_PUBLIC_API_URL": "https://test-api.hrdk.in", "EXPO_PUBLIC_DEMO": "0" }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": { "EXPO_PUBLIC_API_URL": "https://api.hrdk.in", "EXPO_PUBLIC_DEMO": "0" }
+    }
+  }
+}
