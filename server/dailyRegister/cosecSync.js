@@ -33,7 +33,7 @@ import CosecEmployee from "./models/CosecEmployee.js";
 import CosecDayRecord from "./models/CosecDayRecord.js";
 import Employee from "./models/Employee.js";
 import { COSEC_DB_NAME } from "../config/cosecDb.js";
-import { gateDirection } from "./devices.js";
+import { IN_DEVICES, OUT_DEVICES, gateDirection } from "./devices.js";
 
 const STATE_NAME = "cosecPunches";
 const TIME_ZONE = process.env.PUNCH_TIME_ZONE || "UTC";
@@ -132,7 +132,11 @@ function pairByDirection(punches) {
 // other machines are kept apart as areaPunches. A day without any gate punch
 // (no machine recorded yet, or a branch reader only) falls back to guessing:
 // IN, OUT, IN, OUT ... in time order ("direction: guess").
-function buildDayRecords(punches, nameOf) {
+// gateDown: Set of "DD-MM-YYYY" days on which the ENTRY or EXIT machine
+// recorded (almost) nothing -- e.g. 26-07 to 13-08-2026 the ENTRY machine sent
+// no punches at all, so every EXIT would look like "came in without ENTRY".
+// Those days are guessed instead, marked gateDown.
+function buildDayRecords(punches, nameOf, gateDown = new Set()) {
   const groups = new Map(); // "ID|DD-MM-YYYY" -> { doc fields..., times: [Date] }
 
   for (const punch of punches) {
@@ -179,13 +183,14 @@ function buildDayRecords(punches, nameOf) {
       .filter((punch) => punch.type);
 
     let pairs;
-    if (gate.length) {
+    if (gate.length && !gateDown.has(group.Date)) {
       doc.direction = "device";
       pairs = pairByDirection(gate.map((punch) => ({ time: clock(punch.time), type: punch.type })));
       const area = kept.filter((punch) => !gateDirection(punch.device));
       if (area.length) doc.areaPunches = area.map((punch) => ({ time: clock(punch.time), device: punch.device }));
     } else {
       doc.direction = "guess";
+      if (gate.length) doc.gateDown = true;
       pairs = [];
       kept.forEach((punch, i) => {
         if (i % 2 === 0) pairs.push({ IN: clock(punch.time) });
@@ -213,18 +218,41 @@ const recordKey = (doc) => `${doc.ID}|${doc.Date}`;
 // No timestamps: a replacement identical to the stored record is then a no-op
 // in MongoDB (no write, no change event), which keeps restarts cheap too.
 // Returns how many records were sent.
-async function upsertDayRecords(docs) {
+//
+// fillOnly (the COSEC program's own day records): never replace a day built
+// from punches (those carry `direction`, ENTRY/EXIT-aware); only add days that
+// are missing and refresh days that came from this same feed.
+async function upsertDayRecords(docs, { fillOnly = false } = {}) {
   const changed = docs.filter((doc) => lastWritten.get(recordKey(doc)) !== JSON.stringify(doc));
   for (let i = 0; i < changed.length; i += WRITE_BATCH) {
     const batch = changed.slice(i, i + WRITE_BATCH);
-    const ops = batch.map((doc) => ({
-      replaceOne: {
-        filter: { ID: doc.ID, Date: doc.Date },
-        replacement: doc,
-        upsert: true,
-        timestamps: false
-      }
-    }));
+    const ops = fillOnly
+      ? batch.flatMap((doc) => [
+          {
+            replaceOne: {
+              filter: { ID: doc.ID, Date: doc.Date, direction: { $exists: false } },
+              replacement: doc,
+              upsert: false,
+              timestamps: false
+            }
+          },
+          {
+            updateOne: {
+              filter: { ID: doc.ID, Date: doc.Date },
+              update: { $setOnInsert: doc },
+              upsert: true,
+              timestamps: false
+            }
+          }
+        ])
+      : batch.map((doc) => ({
+          replaceOne: {
+            filter: { ID: doc.ID, Date: doc.Date },
+            replacement: doc,
+            upsert: true,
+            timestamps: false
+          }
+        }));
     await Attendance.bulkWrite(ops, { ordered: false, timestamps: false });
     for (const doc of batch) lastWritten.set(recordKey(doc), JSON.stringify(doc));
   }
@@ -298,7 +326,8 @@ async function syncDayKeyedRecords(nameOf, { full = false } = {}) {
     docs.push(...dayRecordsFromDayKeyedDoc(row, nameOf));
   }
 
-  await upsertDayRecords(docs);
+  // Days built from punches (ENTRY/EXIT machines) always win over these.
+  await upsertDayRecords(docs, { fillOnly: true });
   return docs.length;
 }
 
@@ -385,6 +414,43 @@ function dayKeyOfPunch(row) {
   return dayKeyOf(wallClockParts(time));
 }
 
+// Days (between `from` and `to`) on which a main gate machine was not working:
+// ENTRY punches fewer than GATE_MIN_SHARE of EXIT punches, or the other way
+// round. On a normal day ENTRY is about 70% of EXIT; on 26-07..13-08-2026 it
+// was 0. Counted across all employees, in the punches' own wall-clock zone.
+const GATE_MIN_SHARE = 0.25;
+async function gateDownDays(from, to) {
+  const rows = await Punch.aggregate([
+    {
+      $match: {
+        punchTime: { $gte: from, $lt: to },
+        deviceId: { $in: [...IN_DEVICES, ...OUT_DEVICES] }
+      }
+    },
+    {
+      $group: {
+        _id: { day: { $dateToString: { format: "%d-%m-%Y", date: "$punchTime", timezone: TIME_ZONE } }, device: "$deviceId" },
+        n: { $sum: 1 }
+      }
+    }
+  ]);
+  const days = new Map(); // day -> { in, out }
+  for (const row of rows) {
+    const day = days.get(row._id.day) || { in: 0, out: 0 };
+    if (IN_DEVICES.has(String(row._id.device))) day.in += row.n;
+    else day.out += row.n;
+    days.set(row._id.day, day);
+  }
+  // Today is still running (mornings are nearly all ENTRY), so never judged.
+  const today = recentDayKeys(1)[0];
+  const down = new Set();
+  for (const [day, { in: ins, out }] of days) {
+    if (day === today) continue;
+    if (ins < out * GATE_MIN_SHARE || out < ins * GATE_MIN_SHARE) down.add(day);
+  }
+  return down;
+}
+
 function newer(a, b) {
   return !a || (b && b > a) ? b : a;
 }
@@ -393,6 +459,7 @@ function newer(a, b) {
 // the {employeeId, punchTime} index, so no big in-memory sorts on Atlas).
 async function fullRebuild(nameOf) {
   const employeeIds = await Punch.distinct("employeeId");
+  const gateDown = await gateDownDays(new Date(0), new Date(Date.now() + DAY_MS));
   let punches = 0;
   let docs = 0;
   let maxPunchTime = null;
@@ -402,7 +469,7 @@ async function fullRebuild(nameOf) {
     const rows = await Punch.find({ employeeId }, PUNCH_FIELDS).sort({ punchTime: 1 }).lean();
     if (!rows.length) continue;
 
-    const built = buildDayRecords(rows, nameOf);
+    const built = buildDayRecords(rows, nameOf, gateDown);
     await upsertDayRecords(built);
 
     punches += rows.length;
@@ -472,7 +539,8 @@ async function incrementalSync(nameOf, lastSyncedAt) {
     return dayKey && affected.get(String(row.employeeId))?.has(dayKey);
   });
 
-  const built = buildDayRecords(relevant, nameOf);
+  const gateDown = await gateDownDays(minDayStart, maxDayEnd);
+  const built = buildDayRecords(relevant, nameOf, gateDown);
   await upsertDayRecords(built);
 
   return { mode: "incremental", punches: relevant.length, docs: built.length, maxPunchTime, maxSyncedAt };
@@ -568,4 +636,4 @@ function startCosecSync() {
   timer = setInterval(() => runCosecSync("scheduled").catch(() => {}), INTERVAL_MINUTES * 60 * 1000);
 }
 
-export { startCosecSync, runCosecSync, getSyncStatus, buildDayRecords, dayRecordsFromDayKeyedDoc };
+export { startCosecSync, runCosecSync, getSyncStatus, buildDayRecords, dayRecordsFromDayKeyedDoc, gateDownDays };

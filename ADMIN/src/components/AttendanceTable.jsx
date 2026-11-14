@@ -282,8 +282,15 @@ export default function AttendanceTable({
                     <td className={`col-punches ${punches ? "" : "punch-empty"}`} title={area ? `Other machines: ${area}` : undefined}>
                       {punches}
                     </td>
-                    <td className={`col-total ${directionKnown(doc) ? "" : "punch-empty"}`}>
-                      {directionKnown(doc) ? "Machine" : "Guess"}
+                    <td
+                      className={`col-total ${directionKnown(doc) ? "" : doc.gateDown ? "hours-short" : "punch-empty"}`}
+                      title={
+                        doc.gateDown
+                          ? "The ENTRY or EXIT machine recorded (almost) nothing this day, so IN/OUT can't come from the machines and is guessed"
+                          : undefined
+                      }
+                    >
+                      {directionKnown(doc) ? "Machine" : doc.gateDown ? "Machine off" : "Guess"}
                     </td>
                     <td className={`col-lunch ${lunch ? "" : "punch-empty"}`} title={lunchRange(doc)}>
                       {lunch || "–"}

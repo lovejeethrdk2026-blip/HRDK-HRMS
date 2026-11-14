@@ -57,6 +57,8 @@ async function toRegisterRows(records) {
     // "device": IN/OUT from the ENTRY / EXIT machines; "guess": alternated
     // (no machine recorded). Punches at other machines, with their names.
     row.direction = record.direction || "guess";
+    // ENTRY or EXIT machine not working that day (cosecSync.js gateDownDays).
+    if (record.gateDown) row.gateDown = true;
     if (record.areaPunches?.length) {
       row.areaPunches = record.areaPunches.map((punch) => ({ time: punch.time, device: deviceName(punch.device) }));
     }
