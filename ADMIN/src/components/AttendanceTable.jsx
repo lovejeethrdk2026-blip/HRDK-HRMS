@@ -27,6 +27,8 @@ import {
 // MAX_PAIR_COLUMNS pairs get columns, the rest is summarised as "+N punches".
 // The Excel export still contains every pair.
 const MAX_PAIR_COLUMNS = 8;
+// Other-machine punches written out in the cell; the rest show on hover.
+const AREA_INLINE = 4;
 
 // Action column choices (saved per employee-day via PUT /api/attendance/mark).
 const MARKS = [
@@ -79,6 +81,9 @@ export default function AttendanceTable({
     const simpleMax = Math.max(...records.map((doc) => pairsOf(doc).length));
     const simplePairs = Array.from({ length: Math.min(simpleMax, MAX_PAIR_COLUMNS) }, (_, i) => i + 1);
     const simpleMore = simpleMax > MAX_PAIR_COLUMNS;
+    // Punches at other machines (not the gate): counted in Total Punches, so
+    // they need a column or the count looks bigger than the times shown.
+    const simpleArea = records.some((doc) => doc.areaPunches?.length);
     return (
       <div className="table-scroll">
         <table className={`att-table att-simple ${hideName ? "att-table-no-name" : ""}`}>
@@ -91,7 +96,7 @@ export default function AttendanceTable({
               {status && <th className="col-status">Status</th>}
               {showDate && <th>Date</th>}
               <th className="col-punches" title="Every IN and OUT punch recorded that day">Total Punches</th>
-              <th className="col-total" title="Every IN → OUT pair added up (lunch and time outside not counted)">Total Working</th>
+              <th className="col-total" title="Every IN → OUT pair added up, plus Unaccounted missed-punch gaps (lunch and time outside not counted)">Total Working</th>
               <th className="col-lunch" title="How many times they punched OUT between 13:00 and 15:00">Lunch Outs (13:00–15:00)</th>
               {simplePairs.map((n) => (
                 <Fragment key={n}>
@@ -100,6 +105,11 @@ export default function AttendanceTable({
                 </Fragment>
               ))}
               {simpleMore && <th className="col-more" title="Every punch is included in the Excel export">More</th>}
+              {simpleArea && (
+                <th className="col-area" title="Punches at machines other than the ENTRY / EXIT gate (counted in Total Punches)">
+                  Other Machines
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -160,6 +170,20 @@ export default function AttendanceTable({
                           .slice(MAX_PAIR_COLUMNS)
                           .reduce((sum, pair) => sum + (pair.IN ? 1 : 0) + (pair.OUT ? 1 : 0), 0);
                         return extra ? `+${extra} punches` : "–";
+                      })()}
+                    </td>
+                  )}
+                  {simpleArea && (
+                    <td
+                      className={`col-area ${doc.areaPunches?.length ? "" : "punch-empty"}`}
+                      title={areaPunchText(doc) || undefined}
+                    >
+                      {(() => {
+                        // First few inline, the rest on hover (some days have dozens).
+                        const list = doc.areaPunches || [];
+                        if (!list.length) return "–";
+                        const head = areaPunchText({ areaPunches: list.slice(0, AREA_INLINE) });
+                        return list.length > AREA_INLINE ? `${head} +${list.length - AREA_INLINE} more` : head;
                       })()}
                     </td>
                   )}
@@ -254,14 +278,14 @@ export default function AttendanceTable({
                 <th
                   rowSpan={2}
                   className="col-total"
-                  title="Time between gate punches that can't be counted as inside or outside because a punch is missing (EXIT then EXIT, or ENTRY then ENTRY). Total Working + lunch (13:00-15:00) + Outside + Unaccounted = first to last gate punch."
+                  title="Time between gate punches that can't be counted as inside or outside because a punch is missing (EXIT then EXIT, or ENTRY then ENTRY). Already counted inside Total Working (shown here for information)."
                 >
                   Unaccounted
                 </th>
                 <th
                   rowSpan={2}
                   className="col-total"
-                  title={`Total Working + Unaccounted (missed punches count as inside) against a full day: the employee's shift length (less 1 hour lunch for a day shift over 13:00-15:00), or ${FULL_DAY_HOURS} hours without a shift. + extra, - short`}
+                  title={`Total Working against a full day: the employee's shift length (less 1 hour lunch for a day shift over 13:00-15:00), or ${FULL_DAY_HOURS} hours without a shift. + extra, - short`}
                 >
                   vs Full Day
                 </th>

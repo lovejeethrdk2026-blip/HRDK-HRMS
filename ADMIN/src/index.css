@@ -838,7 +838,9 @@ th {
   top: 0;
 }
 
-.att-table thead tr:last-child th {
+/* Second header row only: a one-row header (Daily Register) must stay at
+   top 0, or it slides down over the first data row. */
+.att-table thead tr + tr th {
   top: 33px;
 }
 
@@ -1514,6 +1516,13 @@ tr.present-today:hover td {
 }
 
 .att-table .col-more {
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Punches at non-gate machines: one line per row (the table scrolls). */
+.att-table .col-area {
   white-space: nowrap;
   color: var(--text-muted);
   font-size: 12px;

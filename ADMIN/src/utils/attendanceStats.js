@@ -246,6 +246,11 @@ export function totalWorking(doc) {
     else if (doc.nightShift) seconds += outAt + 24 * 3600 - inAt;
   });
 
+  // Unaccounted (missed-punch) gaps count as worked: the EXIT face reader
+  // sits on the way to the washroom and logs false EXITs, so an EXIT -> EXIT
+  // gap is the employee still inside.
+  seconds += unaccountedSeconds(doc) || 0;
+
   return { seconds, open, hasAny: seconds > 0 || open };
 }
 
@@ -351,13 +356,11 @@ export function earlyOutText(doc) {
 
 // Worked time against the row's full day (fullDaySeconds): "+0:30" over,
 // "-1:15" short, "0:00" exactly; "" while still clocked in (the day isn't
-// over) or nothing to add up. Unaccounted time counts as worked: the EXIT
-// face reader sits on the way to the washroom and logs false EXITs, so an
-// EXIT -> EXIT gap is the employee still inside, not gone.
+// over) or nothing to add up. Total Working already includes Unaccounted.
 export function vsFullDayText(doc) {
   const total = totalWorking(doc);
   if (!total.hasAny || total.open) return "";
-  const diff = total.seconds + (unaccountedSeconds(doc) || 0) - fullDaySeconds(doc);
+  const diff = total.seconds - fullDaySeconds(doc);
   const text = formatDuration(Math.abs(diff));
   if (diff > 0) return `+${text}`;
   return diff < 0 ? `-${text}` : text;
