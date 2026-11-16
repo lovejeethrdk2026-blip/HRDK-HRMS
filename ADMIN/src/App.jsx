@@ -15,6 +15,8 @@ const Attendance = lazy(() => import("./pages/Attendance"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Departments = lazy(() => import("./pages/Departments"));
 const Leave = lazy(() => import("./pages/Leave"));
+const Holidays = lazy(() => import("./pages/Holidays"));
+const PayrollSettings = lazy(() => import("./pages/PayrollSettings"));
 const Messages = lazy(() => import("./pages/Messages"));
 const EmpCost = lazy(() => import("./pages/EmpCost"));
 const MonthShiftPay = lazy(() => import("./pages/MonthShiftPay"));
@@ -32,6 +34,7 @@ const PAGES = {
   headCount: (props) => <Attendance view="headcount" {...props} />,
   nightShift: (props) => <Attendance view="night" {...props} />,
   leave: Leave,
+  holidays: Holidays,
   messages: Messages,
   employees: Employees,
   addEmployee: AddEmployee,
@@ -47,7 +50,8 @@ const PAGES = {
   monthShiftPay: MonthShiftPay, // Payroll > Month Shift Register & Pay
   financialSummary: FinancialSummary,
   users: Users, // admin only (top-right menu)
-  roles: Roles // admin only (top-right menu)
+  roles: Roles, // admin only (top-right menu)
+  payrollSettings: PayrollSettings // admin (HR) only (top-right menu)
 };
 
 // The permission each page needs (Roles & Permissions page). "admin": admins only.
@@ -58,6 +62,7 @@ const PAGE_PERMISSION = {
   headCount: "attendance.view",
   nightShift: "attendance.view",
   leave: "leave.view",
+  holidays: "holidays.view",
   messages: "chat.team", // admin (HR) always; a manager role only if HR gives it this permission
   employees: "employees.view",
   addEmployee: "employees.add",
@@ -73,7 +78,8 @@ const PAGE_PERMISSION = {
   monthShiftPay: "paysheet.monthpay",
   financialSummary: "paysheet.reports",
   users: "admin",
-  roles: "admin"
+  roles: "admin",
+  payrollSettings: "admin"
 };
 
 export default function App() {

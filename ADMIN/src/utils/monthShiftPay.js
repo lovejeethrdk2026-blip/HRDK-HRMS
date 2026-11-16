@@ -13,13 +13,31 @@
 // - Weekly off (master "Weekly off", Sunday when blank) with no work is paid
 //   (WO, 1 day). Work done on a weekly off earns its P / HD value on top of the
 //   paid weekly off ("WO worked").
+// - Company holiday (Holidays page) not on a weekly off: paid for everyone
+//   (PH = paid holiday, 1 day); work that day earns its P / HD value on top ("PH+P").
 // - Over time = worked time beyond the full day, on days with any work.
 // - Pay: per-day rate = monthly CTC / days in month; earned CTC = per-day rate
 //   x paid days. Hourly rate = per-day rate / full-day hours (for OT pay).
 //   CTC is the one on the month's last day (pay history), from Add Employee.
+// - In hand = earned gross (salary split x paid days / days in month) less
+//   employee PF, ESIC and PT (inHandFor). Total pay = in hand (+ OT pay).
 
 import { totalWorking, fullDaySeconds, lateSeconds, earlyOutSeconds } from "./attendanceStats";
-import { employeeOn, isWorkingOn } from "@salary";
+import { employeeOn, isWorkingOn, salaryForMonth, professionalTax } from "@salary";
+
+// In hand for the paid part of a month, from the employee's salary split
+// (Add Employee, server/utils/salaryFormulas.js): basic, HRA, bonus and special
+// scaled by paidDays / daysInMonth, less the employee's PF (12% of basic +
+// bonus + special, rounded up, at most 3000), ESIC (0.75% of basic) and
+// Professional Tax on that earned gross. Employer PF / ESIC stay inside CTC.
+function inHandFor(split, ratio, state, monthNo) {
+  const gross = (split.basic + split.hra + split.statutoryBonus + split.specialAllowance) * ratio;
+  const pfWage = (split.basic + split.statutoryBonus + split.specialAllowance) * ratio;
+  const pf = split.pfEmployee ? Math.min(Math.ceil(Math.round(pfWage * 12) / 100), 3000) : 0;
+  const esic = split.esicEmployee * ratio;
+  const pt = gross > 0 ? professionalTax(gross, state, monthNo) : 0;
+  return { gross, pf, esic, pt, inHand: gross - pf - esic - pt };
+}
 
 const WEEK_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const pad = (n) => String(n).padStart(2, "0");
@@ -32,7 +50,7 @@ function todayNumber() {
 }
 
 // One day's result for one employee.
-function dayResult({ row, shift, weeklyOff, dayName, fullShare, halfShare }) {
+function dayResult({ row, shift, weeklyOff, dayName, holiday, fullShare, halfShare }) {
   // The master's shift wins; the register row's shift is the fallback.
   const doc = row ? { ...row, shift: shift || row.shift } : { shift };
   const fullDay = fullDaySeconds(doc);
@@ -53,10 +71,16 @@ function dayResult({ row, shift, weeklyOff, dayName, fullShare, halfShare }) {
   let paid;
   let leaveDays = 0;
   let woWorked = 0;
+  let holidayWorked = 0;
   if (isWeeklyOff) {
     paid = 1 + workValue;
     woWorked = workValue;
     code = workValue ? (workValue === 1 ? "WO+P" : "WO+HD") : "WO";
+  } else if (holiday) {
+    // Company holiday (Holidays page): paid for everyone, work on top.
+    paid = 1 + workValue;
+    holidayWorked = workValue;
+    code = workValue ? (workValue === 1 ? "PH+P" : "PH+HD") : "PH";
   } else if (leave) {
     leaveDays = leave.half ? 0.5 : 1;
     paid = Math.min(1, leaveDays + workValue);
@@ -66,13 +90,15 @@ function dayResult({ row, shift, weeklyOff, dayName, fullShare, halfShare }) {
     code = workValue === 1 ? "P" : workValue === 0.5 ? "HD" : "A";
   }
 
-  return { code, paid, workValue, leaveDays, woWorked, isWeeklyOff, worked, fullDay, late, earlyOut, overtime, short };
+  return { code, paid, workValue, leaveDays, woWorked, holidayWorked, isHoliday: !isWeeklyOff && Boolean(holiday), holidayName: holiday || "", isWeeklyOff, worked, fullDay, late, earlyOut, overtime, short };
 }
 
 // rows: Daily Register rows for the month (GET /attendance?view=register).
 // employees: GET /employees (EmployeeProfile documents).
 // month: "YYYY-MM". options: { fullShare, halfShare } as fractions (0.75, 0.5).
-export function monthShiftPay({ rows, employees, month, fullShare = 0.75, halfShare = 0.5 }) {
+// holidays: [{ date: "YYYY-MM-DD", name }] from the Holidays page.
+export function monthShiftPay({ rows, employees, month, holidays = [], fullShare = 0.75, halfShare = 0.5 }) {
+  const holidayOn = new Map(holidays.map((h) => [h.date, h.name]));
   const [yyyy, mm] = month.split("-");
   const year = Number(yyyy);
   const monthNo = Number(mm);
@@ -97,7 +123,7 @@ export function monthShiftPay({ rows, employees, month, fullShare = 0.75, halfSh
     const days = [];
     let counted = 0;
     const totals = {
-      present: 0, halfDays: 0, absent: 0, weeklyOffs: 0, woWorked: 0, leaveDays: 0, paidDays: 0,
+      present: 0, halfDays: 0, absent: 0, weeklyOffs: 0, woWorked: 0, holidays: 0, holidayWorked: 0, leaveDays: 0, paidDays: 0,
       workedSeconds: 0, shiftSeconds: 0, overtimeSeconds: 0, shortSeconds: 0, lateDays: 0, lateSeconds: 0, earlyOutDays: 0
     };
 
@@ -115,19 +141,21 @@ export function monthShiftPay({ rows, employees, month, fullShare = 0.75, halfSh
         continue;
       }
       counted++;
-      const r = dayResult({ row: byDay.get(`${id}|${display}`), shift, weeklyOff, dayName, fullShare, halfShare });
+      const r = dayResult({ row: byDay.get(`${id}|${display}`), shift, weeklyOff, dayName, holiday: holidayOn.get(iso), fullShare, halfShare });
       days.push({ day: d, dayName, ...r });
 
       totals.paidDays += r.paid;
       totals.leaveDays += r.leaveDays;
       totals.woWorked += r.woWorked;
+      totals.holidayWorked += r.holidayWorked;
       if (r.isWeeklyOff) totals.weeklyOffs++;
+      else if (r.isHoliday) totals.holidays++;
       else if (!r.leaveDays || r.leaveDays < 1) {
         if (r.workValue === 1) totals.present++;
         else if (r.workValue === 0.5) totals.halfDays++;
         else if (!r.leaveDays) totals.absent++;
       }
-      if (!r.isWeeklyOff && r.leaveDays < 1) totals.shiftSeconds += r.leaveDays ? r.fullDay / 2 : r.fullDay;
+      if (!r.isWeeklyOff && !r.isHoliday && r.leaveDays < 1) totals.shiftSeconds += r.leaveDays ? r.fullDay / 2 : r.fullDay;
       totals.workedSeconds += r.worked;
       totals.overtimeSeconds += r.overtime;
       totals.shortSeconds += r.short;
@@ -144,6 +172,8 @@ export function monthShiftPay({ rows, employees, month, fullShare = 0.75, halfSh
     const perHour = perDay / fullDayHours;
     const earned = perDay * totals.paidDays;
     const otPay = perHour * (totals.overtimeSeconds / 3600);
+    const split = salaryForMonth(employee, year, monthNo);
+    const pay2 = monthlyCtc ? inHandFor(split, totals.paidDays / daysInMonth, split.state, monthNo) : null;
 
     result.push({
       employeeId: employee.employeeId,
@@ -165,6 +195,11 @@ export function monthShiftPay({ rows, employees, month, fullShare = 0.75, halfSh
       perHour: round2(perHour),
       earned: Math.round(earned),
       otPay: Math.round(otPay),
+      gross: Math.round(pay2?.gross || 0),
+      pf: Math.round(pay2?.pf || 0),
+      esic: Math.round(pay2?.esic || 0),
+      pt: Math.round(pay2?.pt || 0),
+      inHand: Math.round(pay2?.inHand || 0),
       days
     });
   }

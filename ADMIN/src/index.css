@@ -1521,6 +1521,22 @@ tr.present-today:hover td {
   font-size: 12px;
 }
 
+/* Payroll Settings page: see prs block in theme.css. */
+
+/* Holidays page: add form sits in the filters bar; row buttons side by side. */
+.hol-add {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.hol-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 /* Punches at non-gate machines: one line per row (the table scrolls). */
 .att-table .col-area {
   white-space: nowrap;

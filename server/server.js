@@ -22,6 +22,8 @@ import userRoutes from "./users/users.route.js";
 import roleRoutes from "./roles/roles.route.js";
 import driveRoutes from "./drive/drive.route.js";
 import leaveRoutes from "./leave/leave.route.js";
+import holidayRoutes from "./holidays/holidays.route.js";
+import payrollSettingsRoutes from "./payrollSettings/payrollSettings.route.js";
 import meRoutes from "./portal/me.route.js";
 import chatRoutes from "./chat/chat.route.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
@@ -52,6 +54,10 @@ app.use("/api/paysheets", paySheetRoutes);
 // Google Drive for employee documents (Users page).
 app.use("/api/drive", driveRoutes);
 app.use("/api/leave", leaveRoutes);
+// Company holidays: Diwali, Holi, 15 August ... (Holidays page).
+app.use("/api/holidays", holidayRoutes);
+// PF / ESIC / PT rates and switches for the salary formulas (HR only to change).
+app.use("/api/payroll-settings", payrollSettingsRoutes);
 app.use("/api/me", meRoutes);
 app.use("/api/chat", chatRoutes);
 

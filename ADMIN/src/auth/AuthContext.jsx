@@ -1,5 +1,16 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import api from "../api/axios";
+import { setPayrollSettings } from "@salary";
+
+// GET /payroll-settings into the shared salary formulas (Payroll Settings page).
+export async function loadPayrollSettings() {
+  try {
+    const { data } = await api.get("/payroll-settings");
+    setPayrollSettings(data.values);
+  } catch {
+    /* keep the defaults */
+  }
+}
 
 // Who is logged in, shared with the whole app. The server keeps the login in a
 // session cookie (server/users), so on load we just ask GET /users/me.
@@ -13,6 +24,9 @@ export function AuthProvider({ children }) {
   async function loadMe() {
     try {
       const { data } = await api.get("/users/me");
+      // Payroll Settings (PF / ESIC / PT rates) before any page works out a
+      // salary split, so the app matches the server. Defaults if it fails.
+      await loadPayrollSettings();
       setUser(data);
     } catch {
       setUser(null);

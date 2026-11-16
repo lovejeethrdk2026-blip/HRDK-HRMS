@@ -22,7 +22,7 @@ const employee = {
 const types = [
   { code: "CL", name: "Casual Leave", yearlyDays: 12, paid: true },
   { code: "SL", name: "Sick Leave", yearlyDays: 7, paid: true },
-  { code: "EL", name: "Earned Leave", yearlyDays: 15, paid: true },
+  { code: "PL", name: "Privilege Leave", yearlyDays: 15, paid: true },
   { code: "LWP", name: "Leave Without Pay", yearlyDays: 0, paid: false }
 ];
 

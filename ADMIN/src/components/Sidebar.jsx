@@ -96,8 +96,17 @@ export const MENU = [
           { key: "nightShift", label: "Night Shift" }
         ]
       },
-      // Apply / approve leave, balances, leave types (pages/Leave.jsx).
-      { key: "leave", label: "Leave", icon: "ledger" }
+      {
+        key: "leaveMenu",
+        label: "Leave",
+        icon: "ledger",
+        items: [
+          // Apply / approve leave, balances, leave types (pages/Leave.jsx).
+          { key: "leave", label: "Leave" },
+          // Company holidays, paid for everyone (pages/Holidays.jsx).
+          { key: "holidays", label: "Holidays" }
+        ]
+      }
     ]
   },
   {

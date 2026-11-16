@@ -37,6 +37,13 @@ export const PERMISSIONS = [
     ]
   },
   {
+    group: "Holidays",
+    items: [
+      { key: "holidays.view", label: "See company holidays" },
+      { key: "holidays.manage", label: "Add, rename and delete company holidays (paid for everyone)" }
+    ]
+  },
+  {
     group: "Chat",
     items: [
       // HR (admin) always sees every chat; this lets a role's logins see only
@@ -83,6 +90,7 @@ export const DEFAULT_ROLES = [
       "leave.view",
       "leave.apply",
       "leave.approve",
+      "holidays.view",
       "chat.team",
       "paysheet.view"
     ]

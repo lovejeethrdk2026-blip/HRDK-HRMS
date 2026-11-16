@@ -45,7 +45,7 @@ leaveApplicationSchema.index({ employeeId: 1, fromDate: 1 });
 leaveApplicationSchema.index({ status: 1, fromDate: 1, toDate: 1 });
 
 // Extra (or fewer) days of one type for one employee in one financial year,
-// e.g. Earned Leave carried forward: +6. Leave > Balances > Adjust.
+// e.g. Privilege Leave carried forward: +6. Leave > Balances > Adjust.
 const leaveAdjustmentSchema = new mongoose.Schema(
   {
     employeeId: { type: String, required: true },
@@ -63,10 +63,14 @@ export const LeaveType = mongoose.model("LeaveType", leaveTypeSchema);
 export const LeaveApplication = mongoose.model("LeaveApplication", leaveApplicationSchema);
 export const LeaveAdjustment = mongoose.model("LeaveAdjustment", leaveAdjustmentSchema);
 
-// Created the first time the Leave page asks for the types.
+// Built-in leave types: always there; HR only sets how many days a year each
+// one gives (Leave > Leave types). LWP is the unpaid fallback when a balance
+// runs out (0 = no limit). HR can add more types beside these. Created the
+// first time the Leave page asks.
 export const DEFAULT_LEAVE_TYPES = [
+  { code: "PL", name: "Privilege Leave", yearlyDays: 15, paid: true },
   { code: "CL", name: "Casual Leave", yearlyDays: 12, paid: true },
   { code: "SL", name: "Sick Leave", yearlyDays: 7, paid: true },
-  { code: "EL", name: "Earned Leave", yearlyDays: 15, paid: true },
   { code: "LWP", name: "Leave Without Pay", yearlyDays: 0, paid: false }
 ];
+export const FIXED_LEAVE_CODES = DEFAULT_LEAVE_TYPES.map((t) => t.code);

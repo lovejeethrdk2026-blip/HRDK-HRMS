@@ -2,7 +2,7 @@ import Employee from "../dailyRegister/models/Employee.js";
 import { registerScope } from "../dailyRegister/registerScope.js";
 import User from "../users/models/User.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { DEFAULT_LEAVE_TYPES, LeaveAdjustment, LeaveApplication, LeaveType } from "./models/Leave.js";
+import { DEFAULT_LEAVE_TYPES, FIXED_LEAVE_CODES, LeaveAdjustment, LeaveApplication, LeaveType } from "./models/Leave.js";
 import { clearLeaveCache, fyOf, isIsoDate, leaveDays } from "./leaveDays.js";
 
 // Leave page: leave types, applications (apply -> approve / reject / cancel)
@@ -43,11 +43,26 @@ async function scopeIds(req) {
   return scope ? new Set(scope.ids) : null;
 }
 
+// Every type: the built-in ones first (PL, CL, SL, LWP; always there and in
+// use, only their days change), then those HR added, oldest first. Each has
+// fixed: true / false. Earned Leave (EL) from before is the same leave as PL:
+// renamed once, with any applications and adjustments that used it.
 async function allTypes() {
-  if (!(await LeaveType.estimatedDocumentCount())) {
-    await LeaveType.insertMany(DEFAULT_LEAVE_TYPES).catch(() => {});
+  if ((await LeaveType.exists({ code: "EL" })) && !(await LeaveType.exists({ code: "PL" }))) {
+    await LeaveType.updateOne({ code: "EL" }, { $set: { code: "PL", name: "Privilege Leave" } });
+    await LeaveApplication.updateMany({ type: "EL" }, { $set: { type: "PL" } });
+    await LeaveAdjustment.updateMany({ type: "EL" }, { $set: { type: "PL" } });
   }
-  return LeaveType.find({}, { _id: 0, __v: 0, createdAt: 0, updatedAt: 0 }).sort({ createdAt: 1 }).lean();
+  for (const type of DEFAULT_LEAVE_TYPES) {
+    if (!(await LeaveType.exists({ code: type.code }))) await LeaveType.create(type).catch(() => {});
+  }
+  await LeaveType.updateMany({ code: { $in: FIXED_LEAVE_CODES }, active: false }, { $set: { active: true } });
+  const types = await LeaveType.find({}, { _id: 0, __v: 0, updatedAt: 0 }).sort({ createdAt: 1 }).lean();
+  const strip = ({ createdAt, ...t }) => ({ ...t, fixed: FIXED_LEAVE_CODES.includes(t.code) });
+  return [
+    ...FIXED_LEAVE_CODES.map((code) => types.find((t) => t.code === code)).filter(Boolean),
+    ...types.filter((t) => !FIXED_LEAVE_CODES.includes(t.code))
+  ].map(strip);
 }
 
 // ---------- leave types ----------
@@ -78,7 +93,8 @@ function typeFields(body, { creating }) {
   return fields;
 }
 
-// POST /api/leave/types { code, name, yearlyDays, paid }
+// POST /api/leave/types { code, name, yearlyDays, paid } -- a type HR adds
+// beside the built-in PL, CL, SL and LWP (e.g. ML Maternity Leave).
 export const createType = handle(async (req, res) => {
   await allTypes();
   const fields = typeFields(req.body || {}, { creating: true });
@@ -87,10 +103,18 @@ export const createType = handle(async (req, res) => {
   res.status(201).json({ types: await allTypes() });
 });
 
-// PUT /api/leave/types/:code { name?, yearlyDays?, paid?, active? }
+// PUT /api/leave/types/:code -- built-in types: { yearlyDays } only (LWP has
+// no limit); added types: { name?, yearlyDays?, paid?, active? }.
 export const updateType = handle(async (req, res) => {
-  const fields = typeFields(req.body || {}, { creating: false });
-  const done = await LeaveType.updateOne({ code: req.params.code }, { $set: fields });
+  await allTypes();
+  const code = req.params.code;
+  const builtIn = FIXED_LEAVE_CODES.includes(code);
+  if (code === "LWP") fail(400, "Leave Without Pay is built in and has no limit");
+  const fields = builtIn
+    ? typeFields({ yearlyDays: req.body?.yearlyDays }, { creating: false })
+    : typeFields(req.body || {}, { creating: false });
+  if (!Object.keys(fields).length) fail(400, "Nothing to change");
+  const done = await LeaveType.updateOne({ code }, { $set: fields });
   if (!done.matchedCount) fail(404, `No leave type ${req.params.code}`);
   res.json({ types: await allTypes() });
 });

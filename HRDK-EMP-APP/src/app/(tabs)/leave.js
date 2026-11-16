@@ -18,7 +18,7 @@ const ask = (title, message) =>
       );
 
 const STATUS_WORD = { Pending: "Waiting for approval", Approved: "Approved", Rejected: "Not approved", Cancelled: "Cancelled" };
-const TYPE_TONE = { CL: "brand", SL: "good", EL: "gold" };
+const TYPE_TONE = { CL: "brand", SL: "good", PL: "gold" };
 
 // Leave: what is left of each type this year (rings), and every request with
 // where it stands. Apply leave stays pinned at the bottom.

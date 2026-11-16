@@ -8,113 +8,157 @@
 // In hand = that gross less employee PF, ESIC and Professional Tax.
 // All amounts are monthly rupees; state names are matched ignoring case.
 
-const MIN_WAGE = { rajasthan: 8050, "west bengal": 11365, maharashtra: 14470 };
-const STATUTORY_BONUS = 1400;
-const BONUS_YEARLY_LIMIT = 600000;
-const PF_RATE = 0.12;
-const PF_CAP = 3000;
-
-const PF_WAGE_LIMIT = 25000;
-
-const ESIC_EMPLOYER_RATE = 0.0325;
-const ESIC_EMPLOYEE_RATE = 0.0075;
-
-// Professional Tax by state: [up to this monthly gross, PT], first match wins.
-// From the PT BC365 deducts (pay sheets Apr-Aug 2026: West Bengal staff 8xxxx,
-// Maharashtra staff 4xxxx) and the states' slabs. Karnataka from its slab
-// (nil below 25000). Rajasthan has no PT.
-
-const PROFESSIONAL_TAX = {
-  "west bengal": [
-    [20000, 0],
-    [30000, 100],
-    [50000, 140],
-    [100000, 170],
-    [Infinity, 208]
-  ],
-  maharashtra: [
-    [7500, 0],
-    [10000, 175],
-    [Infinity, 200] // 300 in February (see professionalTax)
-  ],
-  karnataka: [
-    [24999.99, 0],
-    [Infinity, 200] // 300 in February (see professionalTax)
-  ]
+// ---- Payroll settings (Payroll Settings page, HR only) -----------------------
+// The numbers the formulas use. Defaults are the HR sheet's; the server loads
+// the saved ones from MongoDB (server/payrollSettings) and the admin app loads
+// them at login, both through setPayrollSettings, so every screen uses the
+// same values. Percentages are stored as percent (12 = 12%).
+export const DEFAULT_PAYROLL_SETTINGS = {
+  pfEnabled: true, // company has PF at all
+  pfEmployeeRate: 12, // % of basic + bonus + special
+  pfEmployerRate: 12,
+  pfCeilingRequired: true, // PF capped: flat pfMaxAmount from pfWageLimit basic up
+  pfWageLimit: 25000,
+  pfMaxAmount: 3000,
+  esicEnabled: true, // company has ESIC at all
+  esicEmployeeRate: 0.75, // % of basic
+  esicEmployerRate: 3.25,
+  esicCeiling: 0, // monthly gross above this: no ESIC; 0 = no limit
+  ptEnabled: true, // deduct Professional Tax (state slabs)
+  basicPercent: 50, // basic = this % of CTC (never below the state's minimum wage)
+  hraPercent: 50, // HRA at most this % of basic
+  statutoryBonus: 1400, // monthly
+  bonusYearlyLimit: 600000, // no bonus from this yearly CTC up
+  minWages: { rajasthan: 8050, "west bengal": 11365, maharashtra: 14470 }, // basic floor by state
+  // Professional Tax by state: slabs in order, first match wins. upTo is the
+  // monthly gross the slab runs to; null on the last one = "and above".
+  // februaryTop: PT on the top slab in February (the year's balance), 0 = same.
+  // From the PT BC365 deducts (pay sheets Apr-Aug 2026: West Bengal staff 8xxxx,
+  // Maharashtra staff 4xxxx) and the states' slabs. A state not listed (e.g.
+  // Rajasthan) has no PT.
+  ptSlabs: {
+    "west bengal": {
+      slabs: [
+        { upTo: 20000, pt: 0 },
+        { upTo: 30000, pt: 100 },
+        { upTo: 50000, pt: 140 },
+        { upTo: 100000, pt: 170 },
+        { upTo: null, pt: 208 }
+      ],
+      februaryTop: 0
+    },
+    maharashtra: {
+      slabs: [
+        { upTo: 7500, pt: 0 },
+        { upTo: 10000, pt: 175 },
+        { upTo: null, pt: 200 }
+      ],
+      februaryTop: 300
+    },
+    karnataka: {
+      slabs: [
+        { upTo: 24999.99, pt: 0 },
+        { upTo: null, pt: 200 }
+      ],
+      februaryTop: 300
+    }
+  }
 };
 
-// The top slab's PT in February, where it differs (the year's balance).
-const FEBRUARY_TOP_PT = { maharashtra: 300, karnataka: 300 };
+let settings = { ...DEFAULT_PAYROLL_SETTINGS };
+
+// Replaces the settings in use (missing keys keep their defaults).
+export function setPayrollSettings(next) {
+  settings = { ...DEFAULT_PAYROLL_SETTINGS, ...(next || {}) };
+  settings.minWages = { ...(next?.minWages || DEFAULT_PAYROLL_SETTINGS.minWages) };
+  settings.ptSlabs = structuredClone(next?.ptSlabs || DEFAULT_PAYROLL_SETTINGS.ptSlabs);
+}
+
+export const payrollSettings = () => settings;
+
+const pct = (n) => (Number(n) || 0) / 100;
 
 const stateKey = (state) => String(state ?? "").trim().toLowerCase();
 const paise = (amount) => Math.round(amount * 100) / 100;
 
-// Higher of 50% of CTC and the floor: the state's minimum wage, raised to
-// 21005 when PF is on but ESIC is off, and to 25005 when both are off.
+// Higher of basicPercent of CTC and the floor: the state's minimum wage,
+// raised to 21005 when PF is on but ESIC is off, and to 25005 when both are off.
 export function basicSalary(ctc, state, pf, esic) {
-  let floor = MIN_WAGE[stateKey(state)] ?? 0;
+  let floor = Number(settings.minWages?.[stateKey(state)]) || 0;
   if (pf && !esic) floor = Math.max(floor, 21005);
   if (!pf && !esic) floor = Math.max(floor, 25005);
-  return Math.max(ctc * 0.5, floor);
+  return Math.max(ctc * pct(settings.basicPercent), floor);
 }
 
-// 1400 while yearly CTC is under 6,00,000, else 0.
+// The statutory bonus (1400) while yearly CTC is under the limit, else 0.
 export function statutoryBonus(ctc) {
-  return ctc > 0 && ctc * 12 < BONUS_YEARLY_LIMIT ? STATUTORY_BONUS : 0;
+  return ctc > 0 && ctc * 12 < settings.bonusYearlyLimit ? Number(settings.statutoryBonus) || 0 : 0;
 }
 
-// 3.25% of basic, when ESIC is on.
+// Employer ESIC (3.25%) of basic, when ESIC is on.
 export function esicEmployer(basic, esic) {
-  return esic ? basic * ESIC_EMPLOYER_RATE : 0;
+  return esic ? basic * pct(settings.esicEmployerRate) : 0;
 }
 
-// 0.75% of basic, when ESIC is on.
+// Employee ESIC (0.75%) of basic, when ESIC is on.
 export function esicEmployee(basic, esic) {
-  return esic ? basic * ESIC_EMPLOYEE_RATE : 0;
+  return esic ? basic * pct(settings.esicEmployeeRate) : 0;
 }
 
-// Employer PF as the HRA and special split counts it: 12% of basic + bonus
-// while basic is under 25000 (special adds its own 12% in specialAllowance),
-// a flat 3000 from 25000 up, 0 when PF is off.
+// Is the PF cap in force for this basic? (from pfWageLimit up, when required)
+const pfCapped = (basic) => settings.pfCeilingRequired && basic >= settings.pfWageLimit;
+
+// Employer PF as the HRA and special split counts it: employer rate of basic +
+// bonus while uncapped (special adds its own share in specialAllowance), the
+// flat cap once capped, 0 when PF is off.
 export function pfForSplit(basic, bonus, pf) {
   if (!pf) return 0;
-  return basic < PF_WAGE_LIMIT ? (basic + bonus) * PF_RATE : PF_CAP;
+  return pfCapped(basic) ? settings.pfMaxAmount : (basic + bonus) * pct(settings.pfEmployerRate);
 }
 
-// Lower of 50% of basic and what CTC leaves after basic, bonus and the
+// Lower of hraPercent of basic and what CTC leaves after basic, bonus and the
 // employer's ESIC and PF. Never below 5% of basic in Maharashtra, nor in West
 // Bengal while ESIC is on; otherwise never below 0.
 export function hraAllowance({ ctc, basic, bonus, employerEsic, splitPf, state, esic }) {
-  const hra = Math.min(ctc - basic - bonus - employerEsic - splitPf, basic * 0.5);
+  const hra = Math.min(ctc - basic - bonus - employerEsic - splitPf, basic * pct(settings.hraPercent));
   const key = stateKey(state);
   const hasFloor = key === "maharashtra" || (key === "west bengal" && esic);
   return Math.max(hra, hasFloor ? basic * 0.05 : 0);
 }
 
-// The rest of CTC. While PF is on and basic is under 25000, special draws 12%
-// employer PF of its own, so the rest is divided by 1.12. Never below 0.
+// The rest of CTC. While PF is on and uncapped, special draws employer PF of
+// its own, so the rest is divided by (1 + employer rate). Never below 0.
 export function specialAllowance({ ctc, basic, hra, bonus, employerEsic, splitPf, pf }) {
   const left = ctc - basic - hra - bonus - employerEsic - splitPf;
-  const special = pf && basic < PF_WAGE_LIMIT ? left / (1 + PF_RATE) : left;
+  const special = pf && !pfCapped(basic) ? left / (1 + pct(settings.pfEmployerRate)) : left;
   return Math.max(special, 0);
 }
 
-// Employee PF, and the same again from the employer: 12% of basic + bonus +
-// special, rounded up, at most 3000, when PF is on.
-export function pfContribution(basic, bonus, special, pf) {
+// PF at `rate` % of basic + bonus + special, rounded up, at most the cap when
+// the ceiling is required, 0 when PF is off.
+function pfAt(rate, basic, bonus, special, pf) {
   if (!pf) return 0;
-  return Math.min(Math.ceil(paise((basic + bonus + special) * PF_RATE)), PF_CAP);
+  const amount = Math.ceil(paise((basic + bonus + special) * pct(rate)));
+  return settings.pfCeilingRequired ? Math.min(amount, settings.pfMaxAmount) : amount;
+}
+
+// Employee PF (12% of basic + bonus + special, rounded up, at most 3000).
+export function pfContribution(basic, bonus, special, pf) {
+  return pfAt(settings.pfEmployeeRate, basic, bonus, special, pf);
 }
 
 // Professional Tax on a month's gross (basic + HRA + bonus + special) in the
-// employee's state; 0 where the state has none. month (1-12), when given,
-// applies the February rate on the top slab (300 in Maharashtra, Karnataka).
+// employee's state; 0 where the state has none or PT is switched off. month
+// (1-12), when given, applies the February rate on the top slab (300 in
+// Maharashtra, Karnataka).
 export function professionalTax(gross, state, month) {
-  const key = stateKey(state);
-  const slabs = PROFESSIONAL_TAX[key];
-  if (!slabs) return 0;
-  const slab = slabs.find(([upTo]) => gross <= upTo);
-  return month === 2 && slab === slabs.at(-1) && FEBRUARY_TOP_PT[key] ? FEBRUARY_TOP_PT[key] : slab[1];
+  if (!settings.ptEnabled) return 0;
+  const rule = settings.ptSlabs?.[stateKey(state)];
+  const slabs = rule?.slabs || [];
+  if (!slabs.length) return 0;
+  const slab = slabs.find(({ upTo }) => upTo == null || gross <= upTo) || slabs.at(-1);
+  const top = slab === slabs.at(-1);
+  return month === 2 && top && rule.februaryTop > 0 ? rule.februaryTop : Number(slab.pt) || 0;
 }
 
 // Basic + HRA + bonus + special, less the employee's PF, ESIC and PT.
@@ -124,12 +168,21 @@ export function inHandSalary({ basic, hra, bonus, special, pf, esic, pt = 0 }) {
 
 
 // The whole monthly split for one employee. month (1-12), when given, is the
-// pay month (only February's PT differs).
+// pay month (only February's PT differs). PF / ESIC need both the company
+// switch (Payroll Settings) and the employee's own; ESIC also stops above the
+// ESIC ceiling when one is set.
 export function salaryStructure({ monthlyCtc, state, pfApplicable, esicApplicable }, month) {
   const ctc = Number(monthlyCtc) || 0;
-  const pf = Boolean(pfApplicable);
-  const esic = Boolean(esicApplicable);
+  const pf = Boolean(pfApplicable) && settings.pfEnabled;
+  const esic = Boolean(esicApplicable) && settings.esicEnabled;
+  const split = splitFor(ctc, state, pf, esic, month);
+  if (esic && settings.esicCeiling > 0 && split.gross > settings.esicCeiling) {
+    return splitFor(ctc, state, pf, false, month).result;
+  }
+  return split.result;
+}
 
+function splitFor(ctc, state, pf, esic, month) {
   const basic = basicSalary(ctc, state, pf, esic);
   const bonus = statutoryBonus(ctc);
   const employerEsic = esicEmployer(basic, esic);
@@ -137,20 +190,25 @@ export function salaryStructure({ monthlyCtc, state, pfApplicable, esicApplicabl
   const hra = hraAllowance({ ctc, basic, bonus, employerEsic, splitPf, state, esic });
   const special = specialAllowance({ ctc, basic, hra, bonus, employerEsic, splitPf, pf });
   const pfAmount = pfContribution(basic, bonus, special, pf);
+  const pfEmployer = pfAt(settings.pfEmployerRate, basic, bonus, special, pf);
   const employeeEsic = esicEmployee(basic, esic);
-  const pt = professionalTax(basic + hra + bonus + special, state, month);
+  const gross = basic + hra + bonus + special;
+  const pt = professionalTax(gross, state, month);
 
   return {
-    basic: paise(basic),
-    hra: paise(hra),
-    specialAllowance: paise(special),
-    statutoryBonus: bonus,
-    esicEmployee: paise(employeeEsic),
-    esicEmployer: paise(employerEsic),
-    pfEmployee: pfAmount,
-    pfEmployer: pfAmount,
-    professionalTax: pt,
-    inHand: paise(inHandSalary({ basic, hra, bonus, special, pf: pfAmount, esic: employeeEsic, pt }))
+    gross,
+    result: {
+      basic: paise(basic),
+      hra: paise(hra),
+      specialAllowance: paise(special),
+      statutoryBonus: bonus,
+      esicEmployee: paise(employeeEsic),
+      esicEmployer: paise(employerEsic),
+      pfEmployee: pfAmount,
+      pfEmployer,
+      professionalTax: pt,
+      inHand: paise(inHandSalary({ basic, hra, bonus, special, pf: pfAmount, esic: employeeEsic, pt }))
+    }
   };
 }
 

@@ -144,6 +144,10 @@ function UserMenu({ onNavigate }) {
                 <MenuIcon name="admin" />
                 Roles &amp; permissions
               </button>
+              <button role="menuitem" onClick={() => pick(() => onNavigate("payrollSettings"))}>
+                <MenuIcon name="admin" />
+                Payroll settings
+              </button>
             </>
           )}
           <button role="menuitem" onClick={() => pick(() => setChanging(true))}>

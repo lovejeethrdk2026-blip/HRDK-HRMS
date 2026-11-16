@@ -41,6 +41,8 @@ const COLUMNS = [
   ["absent", "A", (r) => num(r.absent)],
   ["weeklyOffs", "WO", (r) => num(r.weeklyOffs)],
   ["woWorked", "WO worked", (r) => num(r.woWorked)],
+  ["holidays", "Holiday", (r) => num(r.holidays)],
+  ["holidayWorked", "Holiday worked", (r) => num(r.holidayWorked)],
   ["leaveDays", "Leave", (r) => num(r.leaveDays)],
   ["paidDays", "Paid days", (r) => r.paidDays],
   ["workedSeconds", "Worked hrs", (r) => hours(r.workedSeconds)],
@@ -50,22 +52,28 @@ const COLUMNS = [
   ["lateDays", "Late days", (r) => (r.lateDays ? `${r.lateDays} (${formatDuration(r.lateSeconds)})` : "–")],
   ["perDay", "Per day", (r) => money2.format(r.perDay)],
   ["earned", "Earned CTC", (r) => money.format(r.earned)],
+  ["gross", "Gross", (r) => money.format(r.gross)],
+  ["pf", "PF", (r) => num(r.pf)],
+  ["esic", "ESIC", (r) => num(r.esic)],
+  ["pt", "PT", (r) => num(r.pt)],
+  ["inHand", "In hand", (r) => money.format(r.inHand)],
   ["otPay", "OT pay", (r) => money.format(r.otPay)],
-  ["total", "Total pay", (r, ot) => money.format(r.earned + (ot ? r.otPay : 0))]
+  ["total", "Total pay", (r, ot) => money.format(r.inHand + (ot ? r.otPay : 0))]
 ];
 const NUM_KEYS = new Set(COLUMNS.slice(5).map(([key]) => key));
 
-const CODE_CLASS = { P: "msp-p", HD: "msp-hd", A: "msp-a", WO: "msp-wo" };
-const codeClass = (code) => CODE_CLASS[code] || (code?.startsWith("WO") ? "msp-wo" : code && code !== "–" ? "msp-l" : "");
+const CODE_CLASS = { P: "msp-p", HD: "msp-hd", A: "msp-a", WO: "msp-wo", PH: "msp-ph" };
+const codeClass = (code) =>
+  CODE_CLASS[code] || (code?.startsWith("PH") ? "msp-ph" : code?.startsWith("WO") ? "msp-wo" : code && code !== "–" ? "msp-l" : "");
 
 async function exportToExcel(rows, month, includeOt) {
   const XLSX = await import("xlsx");
   const header = COLUMNS.map(([, label]) => label);
   const body = rows.map((r) => [
     r.employeeId, r.cosecId, r.name, r.department, r.shift, r.monthlyCtc, r.daysCounted, r.present, r.halfDays, r.absent,
-    r.weeklyOffs, r.woWorked, r.leaveDays, r.paidDays, formatDuration(r.workedSeconds), formatDuration(r.shiftSeconds),
-    formatDuration(r.overtimeSeconds), formatDuration(r.shortSeconds), r.lateDays, r.perDay, r.earned, r.otPay,
-    r.earned + (includeOt ? r.otPay : 0)
+    r.weeklyOffs, r.woWorked, r.holidays, r.holidayWorked, r.leaveDays, r.paidDays, formatDuration(r.workedSeconds), formatDuration(r.shiftSeconds),
+    formatDuration(r.overtimeSeconds), formatDuration(r.shortSeconds), r.lateDays, r.perDay, r.earned,
+    r.gross, r.pf, r.esic, r.pt, r.inHand, r.otPay, r.inHand + (includeOt ? r.otPay : 0)
   ]);
   const days = rows[0]?.days || [];
   const dayHeader = ["Code", "Name", ...days.map((d) => `${d.day} ${d.dayName.slice(0, 3)}`)];
@@ -80,6 +88,7 @@ export default function MonthShiftPay() {
   const [month, setMonth] = useState(thisMonth);
   const [register, setRegister] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [holidays, setHolidays] = useState([]); // Holidays page, this month's year
   const [fullPct, setFullPct] = useState(75);
   const [halfPct, setHalfPct] = useState(50);
   const [includeOt, setIncludeOt] = useState(false);
@@ -95,9 +104,10 @@ export default function MonthShiftPay() {
     setError("");
     (async () => {
       const params = { limit: 10000, view: "register", month };
-      const [first, staff] = await Promise.all([
+      const [first, staff, holidayList] = await Promise.all([
         api.get("/attendance", { params: { ...params, page: 1 } }),
-        api.get("/employees")
+        api.get("/employees"),
+        api.get("/holidays", { params: { year: month.slice(0, 4) } }).catch(() => ({ data: [] }))
       ]);
       let rows = first.data.records;
       for (let p = 2; p <= first.data.totalPages; p++) {
@@ -106,6 +116,7 @@ export default function MonthShiftPay() {
       if (cancelled) return;
       setRegister(rows);
       setEmployees(Array.isArray(staff.data) ? staff.data : []);
+      setHolidays(Array.isArray(holidayList.data) ? holidayList.data : []);
     })()
       .catch((err) => !cancelled && setError(err.response?.data?.message || err.message))
       .finally(() => !cancelled && setLoading(false));
@@ -120,10 +131,11 @@ export default function MonthShiftPay() {
         rows: register,
         employees,
         month,
+        holidays,
         fullShare: Math.max(0, Number(fullPct) || 0) / 100,
         halfShare: Math.max(0, Number(halfPct) || 0) / 100
       }),
-    [register, employees, month, fullPct, halfPct]
+    [register, employees, holidays, month, fullPct, halfPct]
   );
 
   const q = search.trim().toLowerCase();
@@ -134,6 +146,8 @@ export default function MonthShiftPay() {
   );
   const totalEarned = rows.reduce((s, r) => s + r.earned, 0);
   const totalOt = rows.reduce((s, r) => s + r.otPay, 0);
+  const totalDeductions = rows.reduce((s, r) => s + r.pf + r.esic + r.pt, 0);
+  const totalInHand = rows.reduce((s, r) => s + r.inHand, 0);
   const totalCtc = rows.reduce((s, r) => s + r.monthlyCtc, 0);
 
   return (
@@ -191,8 +205,17 @@ export default function MonthShiftPay() {
           <li>Full day = shift length, less 1 hour lunch when the shift covers 13:00–15:00. No shift on the master = 8 hours.</li>
           <li>Worked ≥ {fullPct}% of full day = <b>P</b> (1 day); ≥ {halfPct}% = <b>HD</b> (½ day); less = <b>A</b>.</li>
           <li>Weekly off (master, Sunday when blank) = <b>WO</b>, paid 1 day. Work on a weekly off is paid extra (WO worked).</li>
+          <li>
+            Company holiday (Holidays page) = <b>PH</b> (paid holiday, name shown under it), paid 1 day for everyone. Work on a holiday is paid extra (PH+P, Holiday
+            worked). A holiday on a weekly off counts as WO.
+          </li>
           <li>Approved leave is paid (½ for half-day leave). Days before joining / after leaving are not counted.</li>
           <li>Per day = monthly CTC ÷ {result.daysInMonth} days. Earned CTC = per day × paid days.</li>
+          <li>
+            Gross = basic + HRA + bonus + special (employee master salary split) × paid days ÷ {result.daysInMonth}. In hand = gross
+            − employee PF (12% of basic + bonus + special, max 3000) − ESIC (0.75% of basic) − Professional Tax (state slab).
+            Employer PF / ESIC are part of CTC, not paid out. Total pay = in hand (+ OT pay when ticked).
+          </li>
           <li>OT hrs = time worked beyond the full day. OT pay = OT hrs × (per day ÷ full-day hours).</li>
           <li>Current month: counted up to yesterday.</li>
         </ul>
@@ -224,8 +247,10 @@ export default function MonthShiftPay() {
           <div className="msp-summary">
             <div className="card"><span>Monthly CTC</span><b>₹ {money.format(totalCtc)}</b></div>
             <div className="card"><span>Earned CTC</span><b>₹ {money.format(totalEarned)}</b></div>
+            <div className="card"><span>PF + ESIC + PT</span><b>₹ {money.format(totalDeductions)}</b></div>
+            <div className="card"><span>In hand</span><b>₹ {money.format(totalInHand)}</b></div>
             <div className="card"><span>OT pay</span><b>₹ {money.format(totalOt)}</b></div>
-            <div className="card"><span>Total pay</span><b>₹ {money.format(totalEarned + (includeOt ? totalOt : 0))}</b></div>
+            <div className="card"><span>Total pay</span><b>₹ {money.format(totalInHand + (includeOt ? totalOt : 0))}</b></div>
           </div>
           <div className="card card-table">
             <div className="table-scroll">
@@ -250,10 +275,11 @@ export default function MonthShiftPay() {
                           <td colSpan={COLUMNS.length}>
                             <div className="msp-days">
                               {r.days.map((d) => (
-                                <div key={d.day} className={`msp-day ${codeClass(d.code)}`} title={d.worked ? `Worked ${formatDuration(d.worked)} of ${formatDuration(d.fullDay)}${d.late ? `, late ${formatDuration(d.late)}` : ""}${d.overtime ? `, OT ${formatDuration(d.overtime)}` : ""}` : ""}>
+                                <div key={d.day} className={`msp-day ${codeClass(d.code)}`} title={(d.holidayName ? `${d.holidayName} (holiday)${d.worked ? ". " : ""}` : "") + (d.worked ? `Worked ${formatDuration(d.worked)} of ${formatDuration(d.fullDay)}${d.late ? `, late ${formatDuration(d.late)}` : ""}${d.overtime ? `, OT ${formatDuration(d.overtime)}` : ""}` : "")}>
                                   <span className="msp-day-no">{d.day} {d.dayName.slice(0, 2)}</span>
                                   <span className="msp-day-code">{d.code || "·"}</span>
                                   <span className="msp-day-hrs">{d.worked ? formatDuration(d.worked) : ""}</span>
+                                  {d.isHoliday && <span className="msp-day-holiday">{d.holidayName}</span>}
                                 </div>
                               ))}
                             </div>

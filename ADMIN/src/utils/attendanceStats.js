@@ -374,6 +374,49 @@ export function totalWorkingText(doc) {
   return total.open ? `${text} (in)` : text;
 }
 
+// Breaks that start in lunch time: every EXIT between 13:00 and 15:00, to the
+// ENTRY that follows it, counted in full (13:50 -> 15:20 is 1:30). An EXIT
+// with no ENTRY after it is "not back" while the day runs; on a finished day,
+// or when the next punch is another EXIT (missed ENTRY), its length is unknown
+// and it is left out. [{ out, in, seconds }] with in "" / seconds null when
+// not back. Night shift rows have no lunch window.
+export function lunchBreaks(doc) {
+  if (doc.nightShift) return [];
+  const from = toSeconds(LUNCH_START);
+  const to = toSeconds(LUNCH_END);
+  const pairs = pairsOf(doc);
+  const breaks = [];
+  pairs.forEach((pair, i) => {
+    const out = toSeconds(pair.OUT);
+    if (out === null || out < from || out > to) return;
+    const next = pairs[i + 1];
+    const back = toSeconds(next?.IN);
+    if (back !== null && back >= out) breaks.push({ out: pair.OUT, in: next.IN, seconds: back - out });
+    else if (!next && !dayIsOver(doc)) breaks.push({ out: pair.OUT, in: "", seconds: null });
+  });
+  return breaks;
+}
+
+// "45m", "1h 05m", "not back" (still out), or "" with no lunch break.
+export function lunchTimeText(doc) {
+  const breaks = lunchBreaks(doc);
+  if (!breaks.length) return "";
+  const total = breaks.reduce((sum, b) => sum + (b.seconds || 0), 0);
+  const minutes = Math.round(total / 60);
+  const h = Math.floor(minutes / 60);
+  const text = h ? `${h}h ${String(minutes % 60).padStart(2, "0")}m` : minutes || !total ? `${minutes}m` : "<1m";
+  const open = breaks.some((b) => b.seconds === null);
+  if (open && !total) return "not back";
+  return open ? `${text} + out` : text;
+}
+
+// "13:02–13:55, 14:10–…" for a tooltip.
+export function lunchBreaksRange(doc) {
+  return lunchBreaks(doc)
+    .map((b) => `${hhmm(b.out)}–${b.in ? hhmm(b.in) : "…"}`)
+    .join(", ");
+}
+
 // How many times the employee went out during lunch time (13:00-15:00):
 // OUT punches whose time falls inside the window.
 export function lunchOutCount(doc) {
