@@ -263,6 +263,7 @@ export const updateUser = async (req, res) => {
     user.role = role;
     user.departments = access.departments;
     user.registerDepartments = access.registerDepartments;
+    user.managerName = access.managerName || "";
     // the old single fields are replaced by the lists above
     user.department = undefined;
     user.registerDepartment = "";

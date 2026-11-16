@@ -1,6 +1,6 @@
 // Sample answers for EXPO_PUBLIC_DEMO=1, so the screens can be tried before
 // the server has the /api/me routes. Same shapes as the real server (me.js).
-// Any Employee ID works; the OTP is 123456.
+// Any Employee ID works.
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const pad = (n) => String(n).padStart(2, "0");
@@ -110,12 +110,8 @@ export async function demoRequest(path, { method = "GET", body } = {}) {
   const [route, query = ""] = path.split("?");
   const params = Object.fromEntries(new URLSearchParams(query));
 
-  if (route === "/me/auth/send-otp") {
+  if (route === "/me/auth/login") {
     if (!body?.employeeId) fail(400, "Enter your Employee ID");
-    return { sentTo: employee.mobile };
-  }
-  if (route === "/me/auth/verify-otp") {
-    if (body?.otp !== "123456") fail(400, "Wrong OTP. In demo mode the OTP is 123456.");
     return { accessToken: "demo", refreshToken: "demo", employee: { ...employee, employeeId: body.employeeId } };
   }
   if (route === "/me/auth/logout") return { ok: true };

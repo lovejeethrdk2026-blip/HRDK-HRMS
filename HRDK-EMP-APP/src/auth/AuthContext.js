@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { setSignedOutHandler, tokens } from "../api/client";
-import { getProfile, logout as apiLogout, verifyOtp } from "../api/me";
+import { getProfile, login, logout as apiLogout } from "../api/me";
 
 // Who is logged in. On start the saved login key is tried (GET /me/profile);
 // if it works the employee goes straight in, otherwise to Login.
@@ -24,8 +24,8 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
-  const signIn = useCallback(async (employeeId, otp) => {
-    const who = await verifyOtp(employeeId, otp);
+  const signIn = useCallback(async (employeeId) => {
+    const who = await login(employeeId);
     setEmployee(who);
   }, []);
 

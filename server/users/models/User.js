@@ -40,6 +40,12 @@ const userSchema = new mongoose.Schema(
       required: true
     },
     // last request while logged in (middleware/lastSeen.js); null after logout
+    // Chat: this login answers the employees whose "Reporting manager" is this
+    // name (as typed on the employee's record), e.g. "SATYA PRAKASH SHARMA".
+    managerName: {
+      type: String,
+      default: ""
+    },
     lastSeenAt: {
       type: Date,
       default: null

@@ -66,7 +66,11 @@ export default function BulkDepartmentChange() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [employees, filter, ownOnly, user]);
 
-  const filterSubs = subNames(departments.find((d) => d.name === filter.department));
+// Sub departments for the filter: the picked department's, or with "All
+// departments" every sub department there is (one name may sit in several).
+  const filterSubs = filter.department
+    ? subNames(departments.find((d) => d.name === filter.department))
+    : [...new Set(departments.flatMap(subNames))].sort((a, b) => a.localeCompare(b));
   const targetSubs = subNames(departments.find((d) => d.name === target.department));
   const targetPlace = place(target.department, target.subDepartment);
   const targetReady = Boolean(target.department) && (!targetSubs.length || Boolean(target.subDepartment));

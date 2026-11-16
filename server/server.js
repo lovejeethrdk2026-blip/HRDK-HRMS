@@ -22,12 +22,19 @@ import userRoutes from "./users/users.route.js";
 import roleRoutes from "./roles/roles.route.js";
 import driveRoutes from "./drive/drive.route.js";
 import leaveRoutes from "./leave/leave.route.js";
+import meRoutes from "./portal/me.route.js";
+import chatRoutes from "./chat/chat.route.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 import { trackLastSeen } from "./middleware/lastSeen.js";
 
 const app = express();
 
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || "*" }));
+// The employee app's API (/api/me) uses login keys, not cookies, so any origin
+// may call it (the app's web preview runs on its own port). Everything else
+// only from the admin site.
+const adminCors = cors({ origin: process.env.CLIENT_ORIGIN || "*" });
+const appCors = cors({ origin: true });
+app.use((req, res, next) => (req.path.startsWith("/api/me/") ? appCors : adminCors)(req, res, next));
 // gzip: a month of the Daily Register or a year of Pay Sheet is 1-2 MB of
 // JSON, about a tenth of that compressed -- matters once deployed.
 app.use(compression());
@@ -45,6 +52,8 @@ app.use("/api/paysheets", paySheetRoutes);
 // Google Drive for employee documents (Users page).
 app.use("/api/drive", driveRoutes);
 app.use("/api/leave", leaveRoutes);
+app.use("/api/me", meRoutes);
+app.use("/api/chat", chatRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });

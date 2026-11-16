@@ -84,9 +84,12 @@ export default function BulkIncrement() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [employees, filter, ownOnly, user]);
 
-  const subDepartments = (departments.find((d) => d.name === filter.department)?.subDepartments || []).map((s) =>
-    typeof s === "string" ? s : s.name
-  );
+// Sub departments for the filter: the picked department's, or with "All
+// departments" every sub department there is (one name may sit in several).
+  const subNamesOf = (d) => (d?.subDepartments || []).map((s) => (typeof s === "string" ? s : s.name));
+  const subDepartments = filter.department
+    ? subNamesOf(departments.find((d) => d.name === filter.department))
+    : [...new Set(departments.flatMap(subNamesOf))].sort((a, b) => a.localeCompare(b));
 
   const chosen = (employees || []).filter((e) => picked.has(e.employeeId));
   const totals = chosen.reduce(

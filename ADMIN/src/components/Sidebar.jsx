@@ -36,6 +36,12 @@ const ICONS = {
       <path d="M5 20a7 7 0 0 1 14 0" />
     </svg>
   ),
+  chat: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 17h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 5 5Z" />
+      <path d="M8 10h8M8 13h5" />
+    </svg>
+  ),
   tree: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <rect x="9" y="3" width="6" height="5" rx="1.5" />
@@ -69,8 +75,10 @@ export const MENU = [
       },
       // Department -> sub-department -> employees, from the COSEC master.
       { key: "departments", label: "Department", icon: "tree" },
-      // Who reports to whom, from HR's department list (Excel).
-      { key: "reportingChart", label: "Reporting Chart", icon: "tree" }
+      // Who reports to whom, from the employee master.
+      { key: "reportingChart", label: "Reporting Chart", icon: "tree" },
+      // Chats with employees from the HRDK app (pages/Messages.jsx).
+      { key: "messages", label: "Messages", icon: "chat" }
     ]
   },
   {
@@ -106,7 +114,9 @@ export const MENU = [
           { key: "empCost", label: "Emp Cost" },
           { key: "financialSummary", label: "Financial Summary" }
         ]
-      }
+      },
+      // Days vs shift from the Daily Register, pay from master CTC (calculation only).
+      { key: "monthShiftPay", label: "Month Shift Register & Pay", icon: "ledger" }
     ]
   }
 ];

@@ -85,6 +85,31 @@ async function renew() {
   return refreshing;
 }
 
+// Sends one picked file (expo-document-picker asset) as the raw request body,
+// with the login key: apiUpload("/me/documents?title=Photo", asset).
+export async function apiUpload(path, asset) {
+  if (DEMO) throw new ApiError(501, "Uploading works with the live server only (demo mode).");
+  const token = await tokens.get();
+  const body = asset.file || (await (await fetch(asset.uri)).blob());
+  let res;
+  try {
+    res = await fetch(`${API_URL}/api${path}`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": asset.mimeType || "application/octet-stream",
+        ...(token && { Authorization: `Bearer ${token}` })
+      },
+      body
+    });
+  } catch {
+    throw new ApiError(0, "Can't reach the server. Check your internet connection.");
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, data.message || `Upload failed (${res.status})`);
+  return data;
+}
+
 // api("/me/leave"), api("/me/leave", { method: "POST", body: {...} }).
 // Adds the login key; on 401 renews it once and retries.
 export async function api(path, options = {}) {

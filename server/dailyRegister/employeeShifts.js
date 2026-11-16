@@ -10,13 +10,13 @@ import EmployeeProfile from "../employee/models/EmployeeProfile.js";
 const CACHE_MS = 60 * 1000;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-let cache = null; // { at, shifts: Map(employeeId -> { in, out }) }
+let cache = null; // { at, shifts: Map(COSEC ID or employeeId -> { in, out }) }
 let loading = null;
 
 function load() {
   loading ??= EmployeeProfile.find(
     { "shift.in": { $nin: ["", null] }, "shift.out": { $nin: ["", null] } },
-    { _id: 0, employeeId: 1, shift: 1 }
+    { _id: 0, employeeId: 1, initialsNo: 1, shift: 1 }
   )
     .lean()
     .then((rows) => {
@@ -24,7 +24,12 @@ function load() {
       for (const row of rows) {
         const { in: start, out: end } = row.shift || {};
         if (TIME.test(start) && TIME.test(end) && start !== end) {
-          shifts.set(String(row.employeeId), { in: start, out: end });
+          // Register rows carry the COSEC ID, which the master keeps in
+          // "Initials No." (initialsNo); the employee code is kept as a key too.
+          const shift = { in: start, out: end };
+          const cosecId = String(row.initialsNo ?? "").trim();
+          if (cosecId) shifts.set(cosecId, shift);
+          shifts.set(String(row.employeeId), shift);
         }
       }
       cache = { at: Date.now(), shifts };
@@ -36,7 +41,7 @@ function load() {
   return loading;
 }
 
-// Map(employeeId -> { in: "HH:mm", out: "HH:mm" }) of employees with a full shift.
+// Map(COSEC ID or employeeId -> { in: "HH:mm", out: "HH:mm" }) of employees with a full shift.
 export async function employeeShifts() {
   if (cache && Date.now() - cache.at < CACHE_MS) return cache.shifts;
   if (cache) {

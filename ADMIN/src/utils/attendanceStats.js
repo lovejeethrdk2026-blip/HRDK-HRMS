@@ -86,7 +86,12 @@ export function lunchBreak(doc) {
     const out = punches[i];
     if (out.type !== "OUT" || out.seconds > end) continue;
 
-    const back = punches.slice(i + 1).find((punch) => punch.type === "IN");
+    // The break ends at the very next punch, which must be an IN. If the next
+    // punch is another OUT, the employee came back without an ENTRY punch,
+    // so this OUT says nothing about the lunch length.
+    const next = punches[i + 1];
+    if (next && next.type !== "IN") continue;
+    const back = next;
     if (!back) {
       if (out.seconds >= start) return { out: out.time, in: "", minutes: null };
       continue;
@@ -112,7 +117,7 @@ const dayNumber = (date) => {
 
 // Is the row's day (or night shift) finished, so an IN without an OUT is a
 // missed EXIT punch rather than someone still inside?
-function dayIsOver(doc) {
+export function dayIsOver(doc) {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
   const today = Number(`${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`);
@@ -146,16 +151,44 @@ export function missedText(doc) {
 }
 
 // Time spent outside between leaving (EXIT) and coming back (next ENTRY),
-// only where both punches exist. null on a guessed row.
+// only where both punches exist, NOT counting the lunch time 13:00-15:00:
+// going out for lunch inside that window is allowed. Out 12:30 -> back 15:30
+// is 1:00 outside (12:30-13:00 and 15:00-15:30). Night shift rows have no
+// lunch window. null on a guessed row.
 export function outsideSeconds(doc) {
   if (!directionKnown(doc)) return null;
   const pairs = pairsOf(doc);
+  const lunchFrom = toSeconds(LUNCH_START);
+  const lunchTo = toSeconds(LUNCH_END);
   let seconds = 0;
   for (let i = 0; i < pairs.length - 1; i++) {
     const outAt = toSeconds(pairs[i].OUT);
     const backAt = toSeconds(pairs[i + 1].IN);
     if (outAt === null || backAt === null) continue;
-    seconds += backAt >= outAt ? backAt - outAt : doc.nightShift ? backAt + 24 * 3600 - outAt : 0;
+    if (doc.nightShift) {
+      seconds += backAt >= outAt ? backAt - outAt : backAt + 24 * 3600 - outAt;
+      continue;
+    }
+    if (backAt < outAt) continue;
+    const lunch = Math.max(0, Math.min(backAt, lunchTo) - Math.max(outAt, lunchFrom));
+    seconds += backAt - outAt - lunch;
+  }
+  return seconds;
+}
+
+// Time out during the 13:00-15:00 lunch window (EXIT -> next ENTRY), the part
+// Outside leaves out. null on a guessed row.
+export function lunchOutSeconds(doc) {
+  if (!directionKnown(doc) || doc.nightShift) return directionKnown(doc) ? 0 : null;
+  const pairs = pairsOf(doc);
+  const lunchFrom = toSeconds(LUNCH_START);
+  const lunchTo = toSeconds(LUNCH_END);
+  let seconds = 0;
+  for (let i = 0; i < pairs.length - 1; i++) {
+    const outAt = toSeconds(pairs[i].OUT);
+    const backAt = toSeconds(pairs[i + 1].IN);
+    if (outAt === null || backAt === null || backAt < outAt) continue;
+    seconds += Math.max(0, Math.min(backAt, lunchTo) - Math.max(outAt, lunchFrom));
   }
   return seconds;
 }
@@ -318,11 +351,13 @@ export function earlyOutText(doc) {
 
 // Worked time against the row's full day (fullDaySeconds): "+0:30" over,
 // "-1:15" short, "0:00" exactly; "" while still clocked in (the day isn't
-// over) or nothing to add up.
+// over) or nothing to add up. Unaccounted time counts as worked: the EXIT
+// face reader sits on the way to the washroom and logs false EXITs, so an
+// EXIT -> EXIT gap is the employee still inside, not gone.
 export function vsFullDayText(doc) {
   const total = totalWorking(doc);
   if (!total.hasAny || total.open) return "";
-  const diff = total.seconds - fullDaySeconds(doc);
+  const diff = total.seconds + (unaccountedSeconds(doc) || 0) - fullDaySeconds(doc);
   const text = formatDuration(Math.abs(diff));
   if (diff > 0) return `+${text}`;
   return diff < 0 ? `-${text}` : text;
@@ -334,4 +369,10 @@ export function totalWorkingText(doc) {
   if (!total.hasAny) return "";
   const text = formatDuration(total.seconds);
   return total.open ? `${text} (in)` : text;
+}
+
+// How many times the employee went out during lunch time (13:00-15:00):
+// OUT punches whose time falls inside the window.
+export function lunchOutCount(doc) {
+  return pairsOf(doc).filter((pair) => pair.OUT && pair.OUT >= LUNCH_START && pair.OUT <= LUNCH_END).length;
 }

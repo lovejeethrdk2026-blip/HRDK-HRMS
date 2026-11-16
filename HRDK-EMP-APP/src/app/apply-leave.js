@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { applyLeave, getLeave } from "../api/me";
-import { Button, Card, ErrorText, Loading, Screen } from "../ui/components";
+import { Button, Card, ErrorText, Field, LoadingCards, niceDate, Screen, Section, tap } from "../ui/components";
 import { useLoad } from "../ui/useLoad";
-import { useTheme } from "../ui/theme";
+import { radius, space, TOUCH, type, useTheme } from "../ui/theme";
 
 const pad = (n) => String(n).padStart(2, "0");
 const isoOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -12,9 +13,9 @@ const addDays = (iso, n) => {
   const [y, m, d] = iso.split("-").map(Number);
   return isoOf(new Date(y, m - 1, d + n));
 };
-const label = (iso) => {
+const weekday = (iso) => {
   const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+  return new Date(y, m - 1, d).toLocaleDateString("en-IN", { weekday: "long" });
 };
 
 // Sundays are the weekly off and not counted (same rule as the server).
@@ -27,26 +28,36 @@ function countDays(from, to, half) {
   return n;
 }
 
-// A date with − / + buttons: no native date picker package needed.
+// A date with - / + buttons (no native date picker needed), big enough to tap.
 function DateStepper({ title, value, onChange, min }) {
   const c = useTheme();
-  const btn = [styles.step, { borderColor: c.border }];
+  const canBack = !min || addDays(value, -1) >= min;
+  const step = (by) => {
+    tap();
+    onChange(addDays(value, by));
+  };
   return (
-    <View style={{ gap: 6 }}>
-      <Text style={[styles.label, { color: c.muted }]}>{title}</Text>
-      <View style={styles.stepper}>
-        <Pressable style={btn} onPress={() => (!min || addDays(value, -1) >= min) && onChange(addDays(value, -1))} hitSlop={6}>
-          <Text style={[styles.stepText, { color: c.brand }]}>−</Text>
+    <View style={{ flex: 1, gap: 6 }}>
+      <Text style={[type.label, { color: c.muted, fontWeight: "600" }]}>{title}</Text>
+      <View style={[styles.stepper, { backgroundColor: c.sunk }]}>
+        <Pressable onPress={() => canBack && step(-1)} disabled={!canBack} style={styles.step} accessibilityLabel={`${title}: one day earlier`}>
+          <Ionicons name="remove" size={20} color={canBack ? c.brand : c.border} />
         </Pressable>
-        <Text style={[styles.dateText, { color: c.text }]}>{label(value)}</Text>
-        <Pressable style={btn} onPress={() => onChange(addDays(value, 1))} hitSlop={6}>
-          <Text style={[styles.stepText, { color: c.brand }]}>+</Text>
+        <View style={{ flex: 1, alignItems: "center" }}>
+          <Text style={[type.heading, type.figure, { color: c.text }]}>{niceDate(value).replace(/ \d{4}$/, "")}</Text>
+          <Text style={[type.small, { color: c.muted }]}>{weekday(value)}</Text>
+        </View>
+        <Pressable onPress={() => step(1)} style={styles.step} accessibilityLabel={`${title}: one day later`}>
+          <Ionicons name="add" size={20} color={c.brand} />
         </Pressable>
       </View>
     </View>
   );
 }
 
+// Apply leave: pick the type (with what's left), the dates, half day, the
+// reason; the summary shows the days it takes. Send goes to the manager / HR
+// as "Waiting for approval".
 export default function ApplyLeave() {
   const c = useTheme();
   const { data, error: loadError } = useLoad(getLeave, []);
@@ -58,18 +69,18 @@ export default function ApplyLeave() {
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [reasonError, setReasonError] = useState("");
 
   const types = useMemo(() => (data?.types || []).filter((t) => t.active !== false), [data]);
   const chosen = type || types[0]?.code || "";
   const end = halfDay ? fromDate : toDate < fromDate ? fromDate : toDate;
   const days = countDays(fromDate, end, halfDay);
   const left = data?.balances[chosen]?.left;
-
-  if (!data && !loadError) return <Loading />;
+  const over = left !== null && left !== undefined && days > left;
 
   async function submit() {
-    if (!reason.trim()) return setError("Write the reason");
-    if (!days) return setError("Those dates are all Sundays");
+    if (!reason.trim()) return setReasonError("Write why you need leave");
+    if (!days) return setError("Those dates are all Sundays, so no leave is needed.");
     setSaving(true);
     setError("");
     try {
@@ -82,73 +93,110 @@ export default function ApplyLeave() {
   }
 
   return (
-    <Screen>
+    <Screen footer={data ? <Button title={`Send for approval${days ? ` · ${days} day${days === 1 ? "" : "s"}` : ""}`} icon="send" onPress={submit} loading={saving} disabled={!chosen || over} /> : null}>
       <ErrorText error={loadError} />
-      <Card title="Leave type">
-        <View style={styles.types}>
-          {types.map((t) => {
-            const active = t.code === chosen;
-            return (
-              <Pressable
-                key={t.code}
-                onPress={() => setType(t.code)}
-                style={[styles.type, { borderColor: active ? c.brand : c.border, backgroundColor: active ? c.brandSoft : "transparent" }]}
-              >
-                <Text style={{ color: active ? c.brand : c.text, fontWeight: "700" }}>{t.code}</Text>
-                <Text style={{ color: c.muted, fontSize: 12 }}>
-                  {data.balances[t.code]?.left ?? "∞"} left
+      {!data && !loadError ? (
+        <LoadingCards count={2} />
+      ) : (
+        <>
+          <Section title="Type of leave">
+            <View style={styles.types}>
+              {types.map((t) => {
+                const on = t.code === chosen;
+                const l = data.balances[t.code]?.left;
+                return (
+                  <Pressable
+                    key={t.code}
+                    onPress={() => {
+                      tap();
+                      setType(t.code);
+                    }}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: on }}
+                    style={[styles.type, { backgroundColor: on ? c.brand : c.card, borderColor: on ? c.brand : c.border }]}
+                  >
+                    <Text style={[type.heading, { color: on ? "#FFFFFF" : c.text }]} numberOfLines={1}>
+                      {t.name.replace(" Leave", "")}
+                    </Text>
+                    <Text style={[type.small, { color: on ? "rgba(255,255,255,0.85)" : c.muted }]}>{l === null || l === undefined ? "No limit" : `${l} left`}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Section>
+
+          <Section title="Dates">
+            <Card>
+              <View style={styles.dates}>
+                <DateStepper
+                  title="From"
+                  value={fromDate}
+                  onChange={(v) => {
+                    setFromDate(v);
+                    if (toDate < v) setToDate(v);
+                  }}
+                />
+                {!halfDay && <DateStepper title="To" value={end} onChange={setToDate} min={fromDate} />}
+              </View>
+              <View style={[styles.half, { borderTopColor: c.border }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[type.body, { color: c.text, fontWeight: "600" }]}>Half day</Text>
+                  <Text style={[type.small, { color: c.muted }]}>Only for one date</Text>
+                </View>
+                <Switch
+                  value={halfDay}
+                  onValueChange={(v) => {
+                    tap();
+                    setHalfDay(v);
+                  }}
+                  trackColor={{ true: c.brand, false: c.border }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+            </Card>
+          </Section>
+
+          <Field
+            label="Reason"
+            placeholder="For example: family function, doctor visit"
+            value={reason}
+            onChangeText={(t) => {
+              setReason(t);
+              if (reasonError) setReasonError("");
+            }}
+            multiline
+            error={reasonError}
+          />
+
+          <Card tone={over ? "bad" : "brand"}>
+            <View style={styles.summary}>
+              <Ionicons name={over ? "alert-circle" : "calendar"} size={22} color={over ? c.bad : c.brand} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[type.heading, { color: over ? c.bad : c.brandInk }]}>
+                  {days} day{days === 1 ? "" : "s"} of {types.find((t) => t.code === chosen)?.name || "leave"}
                 </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </Card>
+                <Text style={[type.small, { color: over ? c.bad : c.brandInk, opacity: 0.85 }]}>
+                  {over
+                    ? `Only ${left} left. Pick fewer days or another type.`
+                    : `${niceDate(fromDate)}${end !== fromDate ? ` to ${niceDate(end)}` : ""}. Sundays are not counted.`}
+                </Text>
+              </View>
+            </View>
+          </Card>
 
-      <Card title="Dates">
-        <DateStepper
-          title="From"
-          value={fromDate}
-          onChange={(v) => {
-            setFromDate(v);
-            if (toDate < v) setToDate(v);
-          }}
-        />
-        {!halfDay && <DateStepper title="To" value={end} onChange={setToDate} min={fromDate} />}
-        <View style={styles.half}>
-          <Text style={{ color: c.text, fontSize: 15 }}>Half day</Text>
-          <Switch value={halfDay} onValueChange={setHalfDay} trackColor={{ true: c.brand }} />
-        </View>
-        <Text style={{ color: left !== null && left !== undefined && days > left ? c.bad : c.muted }}>
-          {days} day{days === 1 ? "" : "s"} (Sundays not counted)
-          {left !== null && left !== undefined ? ` · ${chosen} left: ${left}` : ""}
-        </Text>
-      </Card>
-
-      <Card title="Reason">
-        <TextInput
-          style={[styles.reason, { color: c.text, borderColor: c.border }]}
-          placeholder="Why do you need leave?"
-          placeholderTextColor={c.muted}
-          multiline
-          value={reason}
-          onChangeText={setReason}
-        />
-      </Card>
-
-      <ErrorText error={error} />
-      <Button title="Send to manager" onPress={submit} loading={saving} disabled={!chosen} />
+          <ErrorText error={error} />
+        </>
+      )}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  label: { fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.6 },
-  stepper: { flexDirection: "row", alignItems: "center", gap: 10 },
-  step: { width: 44, height: 44, borderRadius: 10, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  stepText: { fontSize: 22, fontWeight: "600" },
-  dateText: { flex: 1, textAlign: "center", fontSize: 16, fontWeight: "600" },
-  types: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  type: { borderWidth: 1.5, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14, alignItems: "center", minWidth: 72 },
-  half: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  reason: { borderWidth: 1, borderRadius: 10, padding: 12, minHeight: 90, textAlignVertical: "top", fontSize: 15 }
+  types: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+  type: { flexBasis: "47%", flexGrow: 1, borderWidth: 1.5, borderRadius: radius.inner, paddingVertical: space.md, paddingHorizontal: space.md, gap: 2, minHeight: 64 },
+  dates: { flexDirection: "row", gap: space.sm },
+  stepper: { flexDirection: "row", alignItems: "center", borderRadius: radius.inner, paddingVertical: 4 },
+  step: { width: TOUCH, height: TOUCH, alignItems: "center", justifyContent: "center" },
+  half: { flexDirection: "row", alignItems: "center", gap: space.md, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: space.md },
+  summary: { flexDirection: "row", alignItems: "center", gap: space.md }
 });

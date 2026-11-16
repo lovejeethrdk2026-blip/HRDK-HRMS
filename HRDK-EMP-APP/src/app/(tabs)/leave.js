@@ -1,13 +1,27 @@
-import { Alert, StyleSheet, Text, View } from "react-native";
-import { router, useFocusEffect } from "expo-router";
 import { useCallback } from "react";
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { router, useFocusEffect } from "expo-router";
 import { cancelLeave, getLeave } from "../../api/me";
-import { Button, Card, ErrorText, Pill, STATUS_TONE, Screen, showDate } from "../../ui/components";
+import Ring from "../../ui/Ring";
+import { Button, Card, Empty, ErrorText, LoadingCards, niceDate, Pill, Screen, Section, STATUS_TONE, tap } from "../../ui/components";
 import { useLoad } from "../../ui/useLoad";
-import { useTheme } from "../../ui/theme";
+import { radius, space, type, useTheme } from "../../ui/theme";
 
-// Leave: balance per type, Apply leave, and every application with its status.
-// A request goes to the employee's manager as Pending (Leave page in ADMIN).
+const ask = (title, message) =>
+  Platform.OS === "web"
+    ? Promise.resolve(window.confirm(`${title}\n\n${message}`))
+    : new Promise((resolve) =>
+        Alert.alert(title, message, [
+          { text: "Keep it", style: "cancel", onPress: () => resolve(false) },
+          { text: "Cancel request", style: "destructive", onPress: () => resolve(true) }
+        ])
+      );
+
+const STATUS_WORD = { Pending: "Waiting for approval", Approved: "Approved", Rejected: "Not approved", Cancelled: "Cancelled" };
+const TYPE_TONE = { CL: "brand", SL: "good", EL: "gold" };
+
+// Leave: what is left of each type this year (rings), and every request with
+// where it stands. Apply leave stays pinned at the bottom.
 export default function Leave() {
   const c = useTheme();
   const { data, error, loading, reload } = useLoad(getLeave, []);
@@ -19,81 +33,129 @@ export default function Leave() {
     }, [reload])
   );
 
-  function askCancel(app) {
-    Alert.alert("Cancel this leave?", `${app.type}, ${showDate(app.fromDate)}${app.toDate !== app.fromDate ? ` to ${showDate(app.toDate)}` : ""}`, [
-      { text: "Keep", style: "cancel" },
-      {
-        text: "Cancel leave",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await cancelLeave(app._id);
-            reload();
-          } catch (err) {
-            Alert.alert("Couldn't cancel", err.message);
-          }
-        }
-      }
-    ]);
+  async function askCancel(app) {
+    const ok = await ask("Cancel this request?", `${app.type}, ${niceDate(app.fromDate)}${app.toDate !== app.fromDate ? ` to ${niceDate(app.toDate)}` : ""}`);
+    if (!ok) return;
+    try {
+      await cancelLeave(app._id);
+      reload();
+    } catch (err) {
+      Platform.OS === "web" ? window.alert(err.message) : Alert.alert("Couldn't cancel", err.message);
+    }
   }
 
   const typeName = (code) => data?.types.find((t) => t.code === code)?.name || code;
+  const limited = (data?.types || []).filter((t) => t.yearlyDays > 0);
+  const unlimited = (data?.types || []).filter((t) => !t.yearlyDays);
+  const pending = (data?.applications || []).filter((a) => a.status === "Pending");
+  const history = (data?.applications || []).filter((a) => a.status !== "Pending");
+  const fy = data ? `Financial year ${data.fy}-${String(data.fy + 1).slice(2)}` : "";
 
   return (
-    <Screen refreshing={loading} onRefresh={reload}>
+    <Screen
+      safeTop
+      title="Leave"
+      subtitle={fy}
+      refreshing={loading}
+      onRefresh={reload}
+      footer={<Button title="Apply leave" icon="add" onPress={() => router.push("/apply-leave")} />}
+    >
       <ErrorText error={error} />
 
-      <Card title={`Balance · FY ${data?.fy ?? ""}-${String((data?.fy || 0) + 1).slice(2)}`}>
-        {(data?.types || []).map((t) => {
-          const b = data.balances[t.code] || {};
-          return (
-            <View key={t.code} style={styles.balance}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.typeName, { color: c.text }]}>{t.name}</Text>
-                <Text style={{ color: c.muted, fontSize: 13 }}>
-                  {t.yearlyDays ? `${t.yearlyDays} a year · taken ${b.used || 0}` : `No limit · taken ${b.used || 0}`}
-                  {b.pending ? ` · pending ${b.pending}` : ""}
-                </Text>
-              </View>
-              <Text style={[styles.left, { color: c.brand }]}>{b.left ?? "–"}</Text>
+      {!data && loading ? (
+        <LoadingCards count={2} />
+      ) : (
+        <>
+          <Card>
+            <View style={styles.rings}>
+              {limited.map((t) => {
+                const b = data.balances[t.code] || {};
+                const total = t.yearlyDays + (b.adjust || 0);
+                return (
+                  <Pressable
+                    key={t.code}
+                    style={styles.ringCell}
+                    onPress={() => {
+                      tap();
+                      router.push("/apply-leave");
+                    }}
+                    accessibilityLabel={`${t.name}: ${b.left} of ${total} left`}
+                  >
+                    <Ring share={total ? (b.left ?? 0) / total : 0} size={86} stroke={9} value={String(b.left ?? "–")} unit={`of ${total}`} color={c[TYPE_TONE[t.code] || "brand"]} track={c.sunk} />
+                    <Text style={[type.label, { color: c.text, fontWeight: "600", textAlign: "center" }]} numberOfLines={1}>
+                      {t.name.replace(" Leave", "")}
+                    </Text>
+                    {b.pending ? <Text style={[type.small, { color: c.warn }]}>{b.pending} waiting</Text> : <Text style={[type.small, { color: c.faint }]}>taken {b.used || 0}</Text>}
+                  </Pressable>
+                );
+              })}
             </View>
-          );
-        })}
-        <Button title="Apply leave" onPress={() => router.push("/apply-leave")} />
-      </Card>
+            {unlimited.map((t) => (
+              <View key={t.code} style={[styles.unlimited, { backgroundColor: c.sunk }]}>
+                <Text style={[type.label, { color: c.text, flex: 1 }]}>{t.name}</Text>
+                <Text style={[type.small, { color: c.muted }]}>No yearly limit, taken {data.balances[t.code]?.used || 0}</Text>
+              </View>
+            ))}
+          </Card>
 
-      <Card title="My applications">
-        {!data?.applications.length ? (
-          <Text style={{ color: c.muted }}>No leave applied yet.</Text>
-        ) : (
-          data.applications.map((app) => (
-            <View key={app._id} style={[styles.app, { borderTopColor: c.border }]}>
-              <View style={styles.appHead}>
-                <Text style={[styles.typeName, { color: c.text }]}>
-                  {typeName(app.type)}
-                  {app.halfDay ? " (half day)" : ""}
-                </Text>
-                <Pill text={app.status} tone={STATUS_TONE[app.status]} />
-              </View>
-              <Text style={{ color: c.text }}>
-                {showDate(app.fromDate)}
-                {app.toDate !== app.fromDate ? ` – ${showDate(app.toDate)}` : ""} · {app.days} day{app.days === 1 ? "" : "s"}
-              </Text>
-              <Text style={{ color: c.muted }}>{app.reason}</Text>
-              {app.remarks ? <Text style={{ color: c.muted }}>Remark: {app.remarks}</Text> : null}
-              {app.status === "Pending" && <Button title="Cancel request" kind="danger" onPress={() => askCancel(app)} />}
-            </View>
-          ))
-        )}
-      </Card>
+          {pending.length > 0 && (
+            <Section title="Waiting for approval">
+              {pending.map((app) => (
+                <Request key={app._id} app={app} typeName={typeName} onCancel={() => askCancel(app)} />
+              ))}
+            </Section>
+          )}
+
+          <Section title="History">
+            {history.length ? (
+              history.map((app) => <Request key={app._id} app={app} typeName={typeName} />)
+            ) : (
+              <Card>
+                <Empty icon="airplane-outline" title="No leave taken yet" text="Requests you send show here with their status." />
+              </Card>
+            )}
+          </Section>
+        </>
+      )}
     </Screen>
   );
 }
 
+function Request({ app, typeName, onCancel }) {
+  const c = useTheme();
+  const tone = STATUS_TONE[app.status] || "muted";
+  return (
+    <Card style={{ paddingLeft: space.lg + 6 }}>
+      <View style={[styles.stripe, { backgroundColor: tone === "muted" ? c.border : c[tone] }]} />
+      <View style={styles.reqHead}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={[type.heading, { color: c.text }]}>
+            {typeName(app.type)}
+            {app.halfDay ? ", half day" : ""}
+          </Text>
+          <Text style={[type.label, type.figure, { color: c.muted }]}>
+            {niceDate(app.fromDate)}
+            {app.toDate !== app.fromDate ? ` to ${niceDate(app.toDate)}` : ""}
+          </Text>
+        </View>
+        <View style={[styles.days, { backgroundColor: c.sunk }]}>
+          <Text style={[type.heading, type.figure, { color: c.text }]}>{app.days}</Text>
+          <Text style={[type.small, { color: c.muted }]}>day{app.days === 1 ? "" : "s"}</Text>
+        </View>
+      </View>
+      {app.reason ? <Text style={[type.body, { color: c.text }]}>{app.reason}</Text> : null}
+      <Pill text={STATUS_WORD[app.status] || app.status} tone={tone} />
+      {app.remarks ? <Text style={[type.label, { color: c.muted }]}>Note: {app.remarks}</Text> : null}
+      {onCancel ? <Button title="Cancel request" kind="danger" onPress={onCancel} /> : null}
+    </Card>
+  );
+}
+
 const styles = StyleSheet.create({
-  balance: { flexDirection: "row", alignItems: "center", gap: 12 },
-  typeName: { fontSize: 15, fontWeight: "600" },
-  left: { fontSize: 24, fontWeight: "700", minWidth: 40, textAlign: "right" },
-  app: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12, gap: 4 },
-  appHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }
+  rings: { flexDirection: "row", justifyContent: "space-around", gap: space.sm },
+  ringCell: { alignItems: "center", gap: 4, flex: 1 },
+  unlimited: { flexDirection: "row", alignItems: "center", gap: space.sm, borderRadius: radius.inner, padding: space.md },
+  stripe: { position: "absolute", left: 0, top: 14, bottom: 14, width: 4, borderTopRightRadius: 4, borderBottomRightRadius: 4 },
+  reqHead: { flexDirection: "row", alignItems: "center", gap: space.md },
+  days: { borderRadius: radius.inner, paddingVertical: 6, paddingHorizontal: space.md, alignItems: "center" }
 });

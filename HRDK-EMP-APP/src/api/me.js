@@ -1,14 +1,13 @@
 import { Platform } from "react-native";
 import Constants from "expo-constants";
-import { api, tokens } from "./client";
+import { api, apiUpload, tokens } from "./client";
 
 // Every call the app makes. The server takes the employee from the login key,
 // so no call ever sends an employee ID except the login itself.
 //
-// Server contract (server/, still to be built under /api/me):
-//   POST /me/auth/send-otp    { employeeId }                 -> { sentTo: "98xxxxxx21" }
-//   POST /me/auth/verify-otp  { employeeId, otp, device }    -> { accessToken, refreshToken, employee }
-//   POST /me/auth/refresh     { refreshToken }               -> { accessToken, refreshToken }
+// Server: HRMS server/portal/me.route.js (/api/me).
+//   POST /me/auth/login       { employeeId, device }         -> { accessToken, refreshToken, employee }
+//                             (Employee ID only for now; OTP / password later)
 //   POST /me/auth/logout
 //   GET  /me/profile                                         -> employee
 //   GET  /me/attendance?month=YYYY-MM                        -> { month, shift, days: [...] }
@@ -26,10 +25,8 @@ const device = () => ({
   appVersion: Constants.expoConfig?.version || ""
 });
 
-export const sendOtp = (employeeId) => api("/me/auth/send-otp", { method: "POST", body: { employeeId } });
-
-export async function verifyOtp(employeeId, otp) {
-  const data = await api("/me/auth/verify-otp", { method: "POST", body: { employeeId, otp, device: device() } });
+export async function login(employeeId) {
+  const data = await api("/me/auth/login", { method: "POST", body: { employeeId, device: device() } });
   await tokens.set(data);
   return data.employee;
 }
@@ -40,6 +37,15 @@ export async function logout() {
 }
 
 export const getProfile = () => api("/me/profile");
+// Chat with my manager (HR can read and answer too).
+export const getChat = () => api("/me/chat");
+export const sendChat = (text) => api("/me/chat", { method: "POST", body: { text } });
+export const getChatUnread = () => api("/me/chat/unread");
+// Full profile as on Add Employee, with what is missing; one-time correction.
+export const getProfileDetails = () => api("/me/profile/details");
+export const correctProfile = (values) => api("/me/profile/details", { method: "PUT", body: { values } });
+export const uploadMyDocument = (title, asset) =>
+  apiUpload(`/me/documents?title=${encodeURIComponent(title)}&fileName=${encodeURIComponent(asset.name || "file")}`, asset);
 export const getAttendance = (month) => api(`/me/attendance?month=${month}`);
 export const getLeave = () => api("/me/leave");
 export const applyLeave = (form) => api("/me/leave", { method: "POST", body: form });

@@ -13,10 +13,30 @@ import DepartmentPicker from "../components/DepartmentPicker";
 // (each with sub departments) and Daily Register departments (each with COSEC
 // sections). Hidden for an admin, who sees every department.
 //   departmentOptions / registerOptions: [{ name, subs: [...] }]
-function AccessFields({ form, setForm, departmentOptions, registerOptions }) {
-  if (form.role === "admin") return <p className="cp-note">An admin can see and manage every department.</p>;
+function AccessFields({ form, setForm, departmentOptions, registerOptions, managerOptions = [] }) {
+  if (form.role === "admin") return <p className="cp-note">An admin can see and manage every department, and every chat.</p>;
   return (
     <>
+      <label className="dept-modal-label" htmlFor="uf-manager">
+        Manager name for chat
+      </label>
+      <input
+        id="uf-manager"
+        className="dept-modal-input"
+        list="uf-manager-names"
+        placeholder="e.g. SATYA PRAKASH SHARMA (leave blank if not a manager)"
+        value={form.managerName}
+        onChange={(e) => setForm((f) => ({ ...f, managerName: e.target.value.toUpperCase() }))}
+      />
+      <datalist id="uf-manager-names">
+        {managerOptions.map((name) => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
+      <p className="cp-note">
+        This login gets the app chats of every employee whose Reporting manager is this name (needs the role&apos;s
+        &quot;Chat with their own team&quot; permission).
+      </p>
       <div className="us-pickers">
       <DepartmentPicker
         id="uf-depts"
@@ -44,8 +64,9 @@ function AccessFields({ form, setForm, departmentOptions, registerOptions }) {
 
 // form -> the body POST /users/register and PUT /users/:id expect.
 function accessBody(form) {
-  if (form.role === "admin") return { departments: [], registerDepartments: [] };
+  if (form.role === "admin") return { departments: [], registerDepartments: [], managerName: "" };
   return {
+    managerName: form.managerName || "",
     departments: form.departments.map((d) => ({ name: d.name, subDepartments: d.subs })),
     registerDepartments: form.registerDepartments.map((d) => ({ name: d.name, sections: d.subs }))
   };
@@ -53,13 +74,14 @@ function accessBody(form) {
 
 // "+ Add user" dialog: POST /users/register.
 // roles: from the Roles & Permissions page, e.g. [{ name: "manager", label: "Manager" }].
-function AddUserDialog({ departmentOptions, registerOptions, roles, onSaved, onClose }) {
+function AddUserDialog({ departmentOptions, registerOptions, managerOptions, roles, onSaved, onClose }) {
   const [form, setForm] = useState({
     username: "",
     password: "",
     role: roles[0]?.name || "admin",
     departments: [],
-    registerDepartments: []
+    registerDepartments: [],
+    managerName: ""
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -118,7 +140,13 @@ function AddUserDialog({ departmentOptions, registerOptions, roles, onSaved, onC
           ))}
           <option value="admin">Administrator</option>
         </select>
-        <AccessFields form={form} setForm={setForm} departmentOptions={departmentOptions} registerOptions={registerOptions} />
+        <AccessFields
+          form={form}
+          setForm={setForm}
+          departmentOptions={departmentOptions}
+          registerOptions={registerOptions}
+          managerOptions={managerOptions}
+        />
         {error && (
           <p className="dept-modal-error" role="alert">
             {error}
@@ -139,12 +167,13 @@ function AddUserDialog({ departmentOptions, registerOptions, roles, onSaved, onC
 
 // "Edit" dialog: PUT /users/:id (username, role, departments, Daily Register departments).
 // isMe: the admin editing their own login, whose role cannot change.
-function EditUserDialog({ user, isMe, departmentOptions, registerOptions, roles, onSaved, onClose }) {
+function EditUserDialog({ user, isMe, departmentOptions, registerOptions, managerOptions, roles, onSaved, onClose }) {
   const [form, setForm] = useState({
     username: user.username,
     role: user.role,
     departments: (user.departments || []).map((d) => ({ name: d.name, subs: d.subDepartments || [] })),
-    registerDepartments: (user.registerDepartments || []).map((d) => ({ name: d.name, subs: d.sections || [] }))
+    registerDepartments: (user.registerDepartments || []).map((d) => ({ name: d.name, subs: d.sections || [] })),
+    managerName: user.managerName || ""
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -191,7 +220,13 @@ function EditUserDialog({ user, isMe, departmentOptions, registerOptions, roles,
           <option value="admin">Administrator</option>
         </select>
         {isMe && <p className="cp-note">You cannot change your own role.</p>}
-        <AccessFields form={form} setForm={setForm} departmentOptions={departmentOptions} registerOptions={registerOptions} />
+        <AccessFields
+          form={form}
+          setForm={setForm}
+          departmentOptions={departmentOptions}
+          registerOptions={registerOptions}
+          managerOptions={managerOptions}
+        />
         {error && (
           <p className="dept-modal-error" role="alert">
             {error}
@@ -344,6 +379,8 @@ export default function Users() {
   // pickers: [{ name, subs }] from the Department page, and COSEC departments with their sections
   const [departmentOptions, setDepartmentOptions] = useState([]);
   const [registerOptions, setRegisterOptions] = useState([]);
+  // Reporting manager names on employee records, for "Manager name for chat".
+  const [managerOptions, setManagerOptions] = useState([]);
   const [roles, setRoles] = useState([]); // from the Roles & Permissions page
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
@@ -382,6 +419,15 @@ export default function Users() {
         setRegisterOptions((data.departments || []).map((name) => ({ name, subs: data.sections?.[name] || [] })))
       )
       .catch(() => setRegisterOptions([]));
+    api
+      .get("/employees")
+      .then(({ data }) => {
+        const names = (Array.isArray(data) ? data : [])
+          .map((e) => String(e.reportingManager || "").replace(/\s+/g, " ").trim().toUpperCase())
+          .filter(Boolean);
+        setManagerOptions([...new Set(names)].sort());
+      })
+      .catch(() => setManagerOptions([]));
     api
       .get("/roles")
       .then(({ data }) => setRoles(data.roles || []))
@@ -544,6 +590,7 @@ export default function Users() {
         <AddUserDialog
           departmentOptions={departmentOptions}
           registerOptions={registerOptions}
+          managerOptions={managerOptions}
           roles={roles}
           onClose={() => setAdding(false)}
           onSaved={(username) => {
@@ -559,6 +606,7 @@ export default function Users() {
           isMe={editing._id === me._id}
           departmentOptions={departmentOptions}
           registerOptions={registerOptions}
+          managerOptions={managerOptions}
           roles={roles}
           onClose={() => setEditing(null)}
           onSaved={(username) => {

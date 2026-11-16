@@ -15,7 +15,7 @@ import {
   uploadFile
 } from "../drive/googleDrive.js";
 
-// Employee documents (Add Employee > Documents): PDF / JPG / PNG files, one per
+// Employee documents (Add Employee > Documents): PDF / JPG / PNG / Excel files, one per
 // request as the raw request body, listed in the employee's `documents` array.
 //
 // Where the file goes:
@@ -27,13 +27,37 @@ const UPLOAD_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), ".."
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
 // Allowed kinds, checked by the file's first bytes (not just its name).
+// Excel: .xlsx is a zip holding xl/ parts (a .docx is a zip too, so the name and
+// the xl/ entry must both say Excel); .xls is an old Office (OLE) file with an
+// .xls name.
 const KINDS = [
   { mimeType: "application/pdf", ext: ".pdf", magic: [0x25, 0x50, 0x44, 0x46] }, // %PDF
   { mimeType: "image/png", ext: ".png", magic: [0x89, 0x50, 0x4e, 0x47] },
-  { mimeType: "image/jpeg", ext: ".jpg", magic: [0xff, 0xd8, 0xff] }
+  { mimeType: "image/jpeg", ext: ".jpg", magic: [0xff, 0xd8, 0xff] },
+  {
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ext: ".xlsx",
+    magic: [0x50, 0x4b, 0x03, 0x04], // PK zip
+    names: [".xlsx"],
+    check: (buffer) => buffer.includes("xl/")
+  },
+  {
+    mimeType: "application/vnd.ms-excel",
+    ext: ".xls",
+    magic: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1], // OLE
+    names: [".xls"]
+  }
 ];
 
-const kindOf = (buffer) => KINDS.find((kind) => kind.magic.every((byte, i) => buffer[i] === byte));
+const kindOf = (buffer, fileName = "") => {
+  const ext = path.extname(String(fileName)).toLowerCase();
+  return KINDS.find(
+    (kind) =>
+      kind.magic.every((byte, i) => buffer[i] === byte) &&
+      (!kind.names || kind.names.includes(ext)) &&
+      (!kind.check || kind.check(buffer))
+  );
+};
 
 const folderOf = (employeeId) => path.join(UPLOAD_ROOT, employeeId.replace(/[^A-Za-z0-9_-]/g, "_"));
 
@@ -66,8 +90,8 @@ async function findEmployee(req, res) {
 async function uploadDocument(req, res) {
   const buffer = Buffer.isBuffer(req.body) ? req.body : null;
   if (!buffer || !buffer.length) return res.status(400).json({ message: "No file received" });
-  const kind = kindOf(buffer);
-  if (!kind) return res.status(400).json({ message: "Only PDF, JPG or PNG files can be uploaded" });
+  const kind = kindOf(buffer, req.query.fileName);
+  if (!kind) return res.status(400).json({ message: "Only PDF, JPG, PNG or Excel (.xlsx, .xls) files can be uploaded" });
 
   const employee = await findEmployee(req, res);
   if (!employee) return;

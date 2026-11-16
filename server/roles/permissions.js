@@ -37,10 +37,19 @@ export const PERMISSIONS = [
     ]
   },
   {
+    group: "Chat",
+    items: [
+      // HR (admin) always sees every chat; this lets a role's logins see only
+      // their own staff's chats (Users page: "Manager name for chat").
+      { key: "chat.team", label: "Chat with their own staff only (employees whose Reporting manager is them)" }
+    ]
+  },
+  {
     group: "Pay Sheet",
     items: [
       { key: "paysheet.view", label: "See salary summary, detail and loans" },
-      { key: "paysheet.reports", label: "See Emp Cost and Financial Summary" }
+      { key: "paysheet.reports", label: "See Emp Cost and Financial Summary" },
+      { key: "paysheet.monthpay", label: "See Month Shift Register & Pay (days vs shift, pay from CTC)" }
     ]
   }
 ];
@@ -74,6 +83,7 @@ export const DEFAULT_ROLES = [
       "leave.view",
       "leave.apply",
       "leave.approve",
+      "chat.team",
       "paysheet.view"
     ]
   },

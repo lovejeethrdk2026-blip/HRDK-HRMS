@@ -50,5 +50,8 @@ export async function validateAccess(body) {
     registerDepartments.push({ name, sections: cleanList(pick.sections) });
   }
 
-  return { departments, registerDepartments };
+  // Chat: the Reporting manager name this login answers for (upper case, one space).
+  const managerName = String(body.managerName ?? "").replace(/\s+/g, " ").trim().toUpperCase();
+
+  return { departments, registerDepartments, managerName };
 }

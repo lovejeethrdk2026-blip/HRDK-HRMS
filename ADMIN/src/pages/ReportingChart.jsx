@@ -1,14 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import api from "../api/axios";
 import { useAuth } from "../auth/AuthContext";
-import { REPORTING } from "../data/reportingChart";
 import { isActive } from "../utils/employeeStatus";
 import { SHEETS } from "./PaySheets";
 
-// Reporting Chart: who reports to whom, as a collapsible tree. Rows come from
-// data/reportingChart.js (HR's department list) until "Load Excel" reads a
-// newer sheet with the same headings: Employee Code, Employee Name,
-// Department Name, SUB DEPARTMENT, MANAGER. A blank MANAGER makes a top box.
+// Reporting Chart: who reports to whom, as a collapsible tree, built from the
+// employee master (GET /api/employees, the Add Employee / Employees records):
+// each active employee under the employee named in their "Reporting manager".
+// No reporting manager (or one not found) makes a top box.
 // Users with paysheet.view also see each one's pay for a month from Salary
 // Summary (GET /api/paysheets/1), matched on BC's Initials No., which is the
 // sheet's Employee Code (Matrix ID). Clicking a box opens that employee.
@@ -71,40 +70,21 @@ function payByInitials(rows) {
   return map;
 }
 
-// Employees from the Add Employee page (GET /api/employees) laid over the
-// sheet's rows: same code updates that row, a new code is added (marked
-// "added"), and anyone who has left is taken off the chart.
-function withAppEmployees(rows, employees) {
-  if (!employees?.length) return rows;
-  const byCode = new Map(rows.map((row) => [row.code, row]));
-  for (const e of employees) {
-    const code = clean(e.employeeId);
-    if (!code) continue;
-    const initials = clean(e.initialsNo);
-    // The sheet's Employee Code is the Initials No., so either may match a row.
-    if (!byCode.has(code) && initials && byCode.has(initials)) {
-      byCode.set(code, byCode.get(initials));
-      byCode.delete(initials);
-    }
-    if (!isActive(e)) {
-      byCode.delete(code);
-      continue;
-    }
-    const sheet = byCode.get(code);
-    const pick = (field, fallback) => clean(e[field]) || fallback || "";
-    byCode.set(code, {
-      code,
-      name: pick("name", sheet?.name),
-      department: pick("department", sheet?.department),
-      subDepartment: pick("subDepartment", sheet?.subDepartment),
-      manager: pick("reportingManager", sheet?.manager),
-      designation: pick("designation", sheet?.designation),
+// Active employees from the employee master -> chart rows.
+function fromEmployees(employees) {
+  return (employees || [])
+    .filter(isActive)
+    .map((e) => ({
+      code: clean(e.employeeId),
+      name: clean(e.name),
+      department: clean(e.department),
+      subDepartment: clean(e.subDepartment),
+      manager: clean(e.reportingManager),
+      designation: clean(e.designation),
       role: String(e.employeeRole ?? "").trim(),
-      initials: initials || sheet?.initials || (sheet ? sheet.code : ""),
-      added: !sheet
-    });
-  }
-  return [...byCode.values()];
+      initials: clean(e.initialsNo)
+    }))
+    .filter((row) => row.code && row.name);
 }
 
 // rows -> top-level nodes; each node { ...row, boss, reports: [nodes] }, by code.
@@ -113,8 +93,20 @@ function buildTree(rows) {
   const byName = new Map();
   for (const node of nodes) if (!byName.has(node.name)) byName.set(node.name, node);
   const roots = [];
+  // A Reporting manager name that is not an employee in the master (spelt
+  // differently, or several names in one) gets one box of its own, marked
+  // unknown, so its team stays together instead of scattering to the top.
+  const unknown = new Map();
   for (const node of nodes) {
-    const manager = node.manager && byName.get(node.manager);
+    let manager = node.manager && byName.get(node.manager);
+    if (!manager && node.manager) {
+      if (!unknown.has(node.manager)) {
+        const box = { code: `?${node.manager}`, name: node.manager, department: "", subDepartment: "", initials: "", unknown: true, boss: null, reports: [] };
+        unknown.set(node.manager, box);
+        roots.push(box);
+      }
+      manager = unknown.get(node.manager);
+    }
     if (manager && manager !== node) {
       manager.reports.push(node);
       node.boss = manager;
@@ -160,37 +152,6 @@ function matches(node, query) {
   return own.includes(query) || node.reports.some((r) => matches(r, query));
 }
 
-async function readExcel(file) {
-  const { default: ExcelJS } = await import("exceljs");
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(await file.arrayBuffer());
-  const sheet = workbook.worksheets[0];
-  if (!sheet) throw new Error("The file has no sheets.");
-  const headings = {
-    code: "EMPLOYEE CODE",
-    name: "EMPLOYEE NAME",
-    department: "DEPARTMENT NAME",
-    subDepartment: "SUB DEPARTMENT",
-    manager: "MANAGER"
-  };
-  const columnOf = {};
-  sheet.getRow(1).eachCell((cell, column) => {
-    const key = Object.keys(headings).find((k) => headings[k] === clean(cell.text));
-    if (key) columnOf[key] = column;
-  });
-  const missing = Object.keys(headings).filter((k) => !columnOf[k]);
-  if (missing.length) throw new Error(`Missing columns: ${missing.map((k) => headings[k]).join(", ")}.`);
-  const rows = [];
-  sheet.eachRow((row, number) => {
-    if (number === 1) return;
-    const item = {};
-    for (const key in columnOf) item[key] = clean(row.getCell(columnOf[key]).text);
-    if (item.code && item.name) rows.push(item);
-  });
-  if (!rows.length) throw new Error("The sheet has no employees.");
-  return rows;
-}
-
 function Node({ node, ctx }) {
   const { open, onToggle, query, forceOpen, pay, showPay, selected, onSelect, totals } = ctx;
   const hasTeam = node.reports.length > 0;
@@ -198,7 +159,7 @@ function Node({ node, ctx }) {
   const shown = node.reports.filter((r) => matches(r, query));
   const hit = query && `${node.name} ${node.code}`.toLowerCase().includes(query);
   const own = payOf(pay, node);
-  const classes = ["rc-box", hasTeam && "rc-manager", hit && "rc-hit", selected === node.code && "rc-selected"];
+  const classes = ["rc-box", hasTeam && "rc-manager", node.unknown && "rc-unknown", hit && "rc-hit", selected === node.code && "rc-selected"];
   return (
     <li className="rc-item">
       <div className={classes.filter(Boolean).join(" ")}>
@@ -216,10 +177,11 @@ function Node({ node, ctx }) {
         <button type="button" className="rc-text" onClick={() => onSelect(node.code)}>
           <span className="rc-name">
             {node.name}
-            {node.added && <span className="rc-new">New</span>}
           </span>
           <span className="rc-meta">
-            {[node.subDepartment, node.department, node.code].filter(Boolean).join(" · ")}
+            {node.unknown
+              ? "Not an employee in the master: fix this Reporting manager name on these employees"
+              : [node.subDepartment, node.department, node.code].filter(Boolean).join(" · ")}
           </span>
         </button>
         {showPay && pay && !hasTeam && (
@@ -274,7 +236,6 @@ function EmployeePanel({ node, pay, showPay, range, payState, onSelect, onFocus,
               .filter(Boolean)
               .join(" · ")}
           </p>
-          {node.added && <p className="rc-muted">Added on the Add Employee page.</p>}
         </div>
         <button type="button" className="btn btn-ghost" onClick={onClose} aria-label="Close">
           ✕
@@ -365,10 +326,8 @@ function EmployeePanel({ node, pay, showPay, range, payState, onSelect, onFocus,
 export default function ReportingChart() {
   const { can } = useAuth();
   const showPay = can("paysheet.view");
-  const [sheetRows, setSheetRows] = useState(REPORTING);
-  const [appEmployees, setAppEmployees] = useState(null);
-  const rows = useMemo(() => withAppEmployees(sheetRows, appEmployees), [sheetRows, appEmployees]);
-  const [source, setSource] = useState("DEPARTMENT LIST.xlsx");
+  const [employees, setEmployees] = useState(null); // null while loading
+  const rows = useMemo(() => fromEmployees(employees), [employees]);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   // Pay period: a whole month (the month picker) or any from..to dates.
@@ -391,7 +350,6 @@ export default function ReportingChart() {
   const [payState, setPayState] = useState("idle");
   const [selected, setSelected] = useState("");
   const [focus, setFocus] = useState("");
-  const fileRef = useRef(null);
   const roots = useMemo(() => buildTree(rows), [rows]);
   const byCode = useMemo(() => {
     const map = new Map();
@@ -401,16 +359,24 @@ export default function ReportingChart() {
   }, [roots]);
   const totals = useMemo(() => rollUp(roots, pay), [roots, pay]);
   const managers = useMemo(() => [...byCode.values()].filter((n) => n.reports.length).map((n) => n.code), [byCode]);
-  // Top boxes open at first, like HR's own chart.
-  const [open, setOpen] = useState(() => new Set(buildTree(REPORTING).map((n) => n.code)));
+  // Top boxes open at first.
+  const [open, setOpen] = useState(() => new Set());
 
-  // Employees added on the Add Employee page join the chart.
   useEffect(() => {
     let cancelled = false;
     api
       .get("/employees")
-      .then(({ data }) => !cancelled && setAppEmployees(Array.isArray(data) ? data : []))
-      .catch(() => {}); // the sheet's chart still shows
+      .then(({ data }) => {
+        if (cancelled) return;
+        const list = Array.isArray(data) ? data : [];
+        setEmployees(list);
+        setOpen(new Set(buildTree(fromEmployees(list)).map((n) => n.code)));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setEmployees([]);
+        setError(`Employees not loaded: ${err.response?.data?.message || err.message}`);
+      });
     return () => {
       cancelled = true;
     };
@@ -445,7 +411,7 @@ export default function ReportingChart() {
     };
   }, [showPay, range, month, autoMonth]);
 
-  const addedCount = rows.filter((row) => row.added).length;
+  const noManager = rows.filter((row) => !row.manager).length;
 
   const query = search.trim().toLowerCase();
   const focusNode = focus && byCode.get(focus);
@@ -482,23 +448,6 @@ export default function ReportingChart() {
     if (code) setOpen((prev) => new Set([...prev, code]));
   }
 
-  async function onFile(event) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    try {
-      const next = await readExcel(file);
-      setSheetRows(next);
-      setSource(file.name);
-      setOpen(new Set(buildTree(next).map((n) => n.code)));
-      setSelected("");
-      setFocus("");
-      setError("");
-    } catch (err) {
-      setError(err.message || "Could not read that file.");
-    }
-  }
-
   const ctx = { open, onToggle: toggle, query, forceOpen: !!query, pay, showPay, selected, onSelect: select, totals };
 
   return (
@@ -507,8 +456,10 @@ export default function ReportingChart() {
         <div>
           <h1 className="page-title">Reporting Chart</h1>
           <p className="page-subtitle">
-            {rows.length} employees · {managers.length} managers · from {source}
-            {addedCount > 0 && ` + ${addedCount} added in the app`}
+            {employees === null
+              ? "Loading employees…"
+              : `${rows.length} employees · ${managers.length} managers · from the employee master`}
+            {noManager > 0 && ` · ${noManager} without a reporting manager`}
             {showPay && payState === "ready" && ` · ${periodLabel(range)}: ${paidCount} paid, net ${rupees(totalNet)}`}
             {showPay && payState === "loading" && " · loading pay…"}
           </p>
@@ -566,10 +517,6 @@ export default function ReportingChart() {
           <button type="button" className="btn" onClick={() => setOpen(new Set())}>
             Collapse all
           </button>
-          <button type="button" className="btn btn-primary" onClick={() => fileRef.current?.click()}>
-            Load Excel
-          </button>
-          <input ref={fileRef} type="file" accept=".xlsx" hidden onChange={onFile} />
         </div>
       </div>
 

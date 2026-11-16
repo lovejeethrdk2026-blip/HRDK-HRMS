@@ -53,7 +53,16 @@ export const missingKyc = (saved, pending) =>
   KYC_TITLES.filter((title) => ![...saved, ...pending].some((doc) => doc.title === title));
 
 const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png"];
+const EXCEL_EXTS = [".xlsx", ".xls"];
 const MAX_BYTES = 10 * 1024 * 1024;
+
+// ".xlsx" / ".xls" / "" from a file name.
+const extOfName = (name) => (/\.[^.]+$/.exec(String(name || "").toLowerCase()) || [""])[0];
+const isExcel = (name) => EXCEL_EXTS.includes(extOfName(name));
+
+// PDF / JPG / PNG by type, Excel by name (Windows often gives an Excel file no
+// type, or a different one). The server checks the content as well.
+const allowedFile = (file) => ALLOWED_TYPES.includes(file.type) || isExcel(file.name);
 
 const sizeText = (bytes) =>
   bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -65,7 +74,9 @@ const titleWords = (text) => words(text).map((word) => word[0].toUpperCase() + w
 
 // What the server will call the file: 10001_RISHIKA_SONI_Aadhaar_Card.pdf.
 const savedName = (code, name, title, file) => {
-  const ext = file.type === "application/pdf" ? ".pdf" : file.type === "image/png" ? ".png" : ".jpg";
+  const ext = isExcel(file.name)
+    ? extOfName(file.name)
+    : file.type === "application/pdf" ? ".pdf" : file.type === "image/png" ? ".png" : ".jpg";
   return [code || "Code", upperWords(name) || "NAME", titleWords(title) || "Document"].join("_") + ext;
 };
 
@@ -92,7 +103,9 @@ export async function uploadDocuments(employeeId, pending) {
 
 // Joins every document (saved and picked) into one PDF, in DOCUMENT_TITLES
 // order: PDFs are copied page by page, JPG / PNG go on their own A4 page with
-// the document name on top. A file that cannot be read gets a page saying so.
+// the document name on top. An Excel file can't be put in a PDF: it gets a
+// page naming it, to open on its own. A file that cannot be read gets a page
+// saying so.
 async function buildCombinedPdf(employeeId, saved, pending) {
   const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
   const order = (title) => DOCUMENT_TITLES.indexOf(slotOf(title));
@@ -143,6 +156,18 @@ async function buildCombinedPdf(employeeId, saved, pending) {
 
   for (const item of items) {
     const label = `${item.title} - ${item.name}`;
+    if (isExcel(item.name)) {
+      const page = out.addPage(A4);
+      page.drawText(clean(`${label}`), { x: MARGIN, y: A4[1] - MARGIN - 14, size: 13, font });
+      page.drawText("Excel file: not shown in this PDF. Open or download it from the Documents list.", {
+        x: MARGIN,
+        y: A4[1] - MARGIN - 36,
+        size: 10,
+        font,
+        color: rgb(0.35, 0.35, 0.35)
+      });
+      continue;
+    }
     try {
       const bytes = await item.read();
       if (item.type === "application/pdf") {
@@ -212,7 +237,7 @@ export default function EmployeeDocuments({ employeeId, employeeCode, employeeNa
     const bad = [];
     const added = [];
     for (const file of files) {
-      if (!ALLOWED_TYPES.includes(file.type)) bad.push(`${file.name} is not a PDF, JPG or PNG`);
+      if (!allowedFile(file)) bad.push(`${file.name} is not a PDF, JPG, PNG or Excel file`);
       else if (file.size > MAX_BYTES) bad.push(`${file.name} is over 10 MB`);
       else added.push({ key: `${Date.now()}-${Math.random()}`, title, file });
     }
@@ -273,7 +298,7 @@ export default function EmployeeDocuments({ employeeId, employeeCode, employeeNa
   return (
     <div className="ae-docs">
       <div className="ae-docs-top">
-        <p className="ae-docs-hint">PDF, JPG or PNG, up to 10 MB each.</p>
+        <p className="ae-docs-hint">PDF, JPG, PNG or Excel (.xlsx, .xls), up to 10 MB each.</p>
         <button type="button" className="btn" disabled={!total || combining} onClick={downloadAll}>
           {combining ? "Making PDF…" : `Download all as one PDF${total ? ` (${total})` : ""}`}
         </button>
@@ -309,7 +334,7 @@ export default function EmployeeDocuments({ employeeId, employeeCode, employeeNa
                   className="ae-slot-input"
                   type="file"
                   multiple
-                  accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                  accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                   onChange={(e) => addFiles(title, Array.from(e.target.files || []))}
                 />
                 <label htmlFor={inputId} className="btn ae-slot-btn">

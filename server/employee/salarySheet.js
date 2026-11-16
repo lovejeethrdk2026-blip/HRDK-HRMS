@@ -8,7 +8,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 // month, cut to the days they were paid for, as read from the Daily Register.
 //
 // Rules:
-// - Present: any punch (IN or OUT) on the day, matched by employee code = COSEC ID.
+// - Present: any punch (IN or OUT) on the day, matched by COSEC ID (Initials No.).
 // - Weekly off (the card's Weekly off, Sunday when blank) is paid even with no punch.
 // - Every month counts as 30 days: salary = in-hand / 30 * paid days, paid days
 //   at most 30, and a month with every day paid (28-day February too) is 30.
@@ -64,7 +64,10 @@ async function salarySheet(req, res) {
   const rows = [];
   for (const employee of employees) {
     const weeklyOff = employee.weeklyOff || "Sunday";
-    const punches = presentDays.get(String(employee.employeeId)) || new Set();
+    // Register rows carry the COSEC ID: the master's "Initials No." (initialsNo),
+    // or the employee code itself when that is the COSEC ID.
+    const cosecId = String(employee.initialsNo ?? "").trim();
+    const punches = presentDays.get(cosecId) || presentDays.get(String(employee.employeeId)) || new Set();
     let onRolls = 0;
     let present = 0;
     let weeklyOffs = 0;

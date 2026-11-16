@@ -15,7 +15,9 @@ const Attendance = lazy(() => import("./pages/Attendance"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Departments = lazy(() => import("./pages/Departments"));
 const Leave = lazy(() => import("./pages/Leave"));
+const Messages = lazy(() => import("./pages/Messages"));
 const EmpCost = lazy(() => import("./pages/EmpCost"));
+const MonthShiftPay = lazy(() => import("./pages/MonthShiftPay"));
 const Employees = lazy(() => import("./pages/Employees"));
 const FinancialSummary = lazy(() => import("./pages/FinancialSummary"));
 const PaySheets = lazy(() => import("./pages/PaySheets"));
@@ -30,6 +32,7 @@ const PAGES = {
   headCount: (props) => <Attendance view="headcount" {...props} />,
   nightShift: (props) => <Attendance view="night" {...props} />,
   leave: Leave,
+  messages: Messages,
   employees: Employees,
   addEmployee: AddEmployee,
   bulkIncrement: BulkIncrement,
@@ -41,6 +44,7 @@ const PAGES = {
   paySheet2: () => <PaySheets sheetKey="paySheet2" />,
   paySheet3: () => <PaySheets sheetKey="paySheet3" />,
   empCost: EmpCost,
+  monthShiftPay: MonthShiftPay, // Payroll > Month Shift Register & Pay
   financialSummary: FinancialSummary,
   users: Users, // admin only (top-right menu)
   roles: Roles // admin only (top-right menu)
@@ -54,6 +58,7 @@ const PAGE_PERMISSION = {
   headCount: "attendance.view",
   nightShift: "attendance.view",
   leave: "leave.view",
+  messages: "chat.team", // admin (HR) always; a manager role only if HR gives it this permission
   employees: "employees.view",
   addEmployee: "employees.add",
   bulkIncrement: "employees.transfer",
@@ -65,6 +70,7 @@ const PAGE_PERMISSION = {
   paySheet2: "paysheet.view",
   paySheet3: "paysheet.view",
   empCost: "paysheet.reports",
+  monthShiftPay: "paysheet.monthpay",
   financialSummary: "paysheet.reports",
   users: "admin",
   roles: "admin"
@@ -82,6 +88,7 @@ export default function App() {
   const canOpen = (key) => {
     const needs = PAGE_PERMISSION[key];
     if (!needs) return false; // not a page (e.g. "" before anything is picked)
+    if (Array.isArray(needs)) return needs.some(can);
     return needs === "admin" ? user.role === "admin" : can(needs);
   };
 

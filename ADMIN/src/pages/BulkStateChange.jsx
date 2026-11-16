@@ -32,7 +32,7 @@ export default function BulkStateChange() {
   const [employees, setEmployees] = useState(null);
   const [departments, setDepartments] = useState([]);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState({ department: "", state: "", search: "" });
+  const [filter, setFilter] = useState({ department: "", subDepartment: "", state: "", search: "" });
   const [picked, setPicked] = useState(() => new Set());
   const [target, setTarget] = useState({ state: "", city: "" });
   const [date, setDate] = useState(firstOfNextMonth);
@@ -65,10 +65,17 @@ export default function BulkStateChange() {
       .filter((e) => isActive(e))
       .filter((e) => !ownOnly || inMyDepartments(user, e))
       .filter((e) => !filter.department || e.department === filter.department)
+      .filter((e) => !filter.subDepartment || e.subDepartment === filter.subDepartment)
       .filter((e) => !filter.state || sameState(e.state, filter.state))
       .filter((e) => !q || e.name.toLowerCase().includes(q) || String(e.employeeId).toLowerCase().includes(q))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [employees, filter, ownOnly, user]);
+
+// Sub departments for the filter: the picked department's, or with "All
+// departments" every sub department there is (one name may sit in several).
+  const filterSubs = filter.department
+    ? subNames(departments.find((d) => d.name === filter.department))
+    : [...new Set(departments.flatMap(subNames))].sort((a, b) => a.localeCompare(b));
 
   // States the employees work in now, for the filter.
   const statesNow = [...new Set((employees || []).map((e) => e.state).filter(Boolean))].sort();
@@ -265,12 +272,29 @@ export default function BulkStateChange() {
                 id="bs-f-dept"
                 className="bi-input"
                 value={filter.department}
-                onChange={(e) => setFilter((f) => ({ ...f, department: e.target.value }))}
+                onChange={(e) => setFilter((f) => ({ ...f, department: e.target.value, subDepartment: "" }))}
               >
                 <option value="">All departments</option>
                 {departments.map((d) => (
                   <option key={d.name} value={d.name}>
                     {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="bi-field">
+              <label htmlFor="bs-f-sub">Sub department</label>
+              <select
+                id="bs-f-sub"
+                className="bi-input"
+                value={filter.subDepartment}
+                disabled={!filterSubs.length}
+                onChange={(e) => setFilter((f) => ({ ...f, subDepartment: e.target.value }))}
+              >
+                <option value="">All</option>
+                {filterSubs.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
                   </option>
                 ))}
               </select>

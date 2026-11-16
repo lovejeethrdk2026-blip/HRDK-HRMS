@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import api from "../api/axios";
+import { isActive } from "../utils/employeeStatus";
 import { COUNTRIES, STATES } from "../data/places";
 import DISTRICTS_BY_STATE from "../data/districts";
 import { Country, State } from "country-state-city";
-import { REPORTING } from "../data/reportingChart";
 import BulkEmployeeUpload from "../components/BulkEmployeeUpload";
 import SalarySplit from "../components/SalarySplit";
 import EmployeeDocuments, { missingKyc, uploadDocuments } from "../components/EmployeeDocuments";
@@ -757,6 +757,25 @@ function Field({ field, value, onChange, locked, hint, lists }) {
 // with PUT and hands the saved record to onSaved (onCancel goes back).
 export default function AddEmployee({ onNavigate, employee, onSaved, onCancel }) {
   const editing = Boolean(employee);
+  // Reporting manager suggestions: active employees in the employee master.
+  const [managerNames, setManagerNames] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get("/employees")
+      .then(({ data }) => {
+        if (cancelled || !Array.isArray(data)) return;
+        const names = data
+          .filter(isActive)
+          .map((e) => String(e.name || "").replace(/\s+/g, " ").trim().toUpperCase())
+          .filter(Boolean);
+        setManagerNames([...new Set(names)].sort());
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [draft, setDraft] = useState(() => (editing ? withStatutoryRule(draftFrom(employee)) : emptyDraft()));
   // Monthly CTC follows yearly / 12 until the admin types their own figure; a
   // saved figure that differs from yearly / 12 counts as typed.
@@ -979,8 +998,8 @@ export default function AddEmployee({ onNavigate, employee, onSaved, onCancel })
   return (
     <form className="ae" onSubmit={submit} noValidate ref={formRef}>
       <datalist id="reporting-managers">
-        {REPORTING.map((row) => (
-          <option key={row.code} value={row.name} />
+        {managerNames.map((name) => (
+          <option key={name} value={name} />
         ))}
       </datalist>
       <div className="page-header">

@@ -6,6 +6,7 @@ import {
   punchCount,
   lastPunch,
   directionKnown,
+  dayIsOver,
   outsideText,
   unaccountedText,
   missedText,
@@ -17,7 +18,8 @@ import {
   shiftText,
   fullDayText,
   lateText,
-  earlyOutText
+  earlyOutText,
+  lunchOutCount
 } from "../utils/attendanceStats";
 
 // Some days have dozens of punches (someone passing a reader all day long);
@@ -68,6 +70,108 @@ export default function AttendanceTable({
 
   const showDate = !register || records.some((doc) => doc.Date !== records[0].Date);
 
+  const today = todayDisplayDate();
+
+  // The Daily Register: Total Punches, Total Working, how many times the
+  // employee went out in lunch time (13:00-15:00), then the ENTRY / EXIT times.
+  if (register) {
+    // ENTRY / EXIT column pairs, as many as the busiest day needs (at most MAX_PAIR_COLUMNS).
+    const simpleMax = Math.max(...records.map((doc) => pairsOf(doc).length));
+    const simplePairs = Array.from({ length: Math.min(simpleMax, MAX_PAIR_COLUMNS) }, (_, i) => i + 1);
+    const simpleMore = simpleMax > MAX_PAIR_COLUMNS;
+    return (
+      <div className="table-scroll">
+        <table className={`att-table att-simple ${hideName ? "att-table-no-name" : ""}`}>
+          <thead>
+            <tr>
+              <th className="col-emp">Employee ID</th>
+              {!hideName && <th className="col-name">Name</th>}
+              <th className="col-name">Department</th>
+              <th className="col-name" title="COSEC Section (sub-department)">Section</th>
+              {status && <th className="col-status">Status</th>}
+              {showDate && <th>Date</th>}
+              <th className="col-punches" title="Every IN and OUT punch recorded that day">Total Punches</th>
+              <th className="col-total" title="Every IN → OUT pair added up (lunch and time outside not counted)">Total Working</th>
+              <th className="col-lunch" title="How many times they punched OUT between 13:00 and 15:00">Lunch Outs (13:00–15:00)</th>
+              {simplePairs.map((n) => (
+                <Fragment key={n}>
+                  <th className="col-io-in punch-entry-head" title={`Pair ${n}: ENTRY machine (in). On Guess rows the times only alternate.`}>ENTRY</th>
+                  <th className="col-io-out punch-exit-head" title={`Pair ${n}: EXIT machine (out). On Guess rows the times only alternate.`}>EXIT</th>
+                </Fragment>
+              ))}
+              {simpleMore && <th className="col-more" title="Every punch is included in the Excel export">More</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {records.map((doc) => {
+              const punches = punchCount(doc);
+              const total = totalWorkingText(doc);
+              const outs = lunchOutCount(doc);
+              const lunch = lunchText(doc);
+              return (
+                <tr key={doc._id || `${doc.ID}-${doc.Date}`} className={doc.Date === today ? "present-today" : ""}>
+                  <td className="col-emp">
+                    {doc.ID}
+                    {doc.nightShift && <span className="pill pill-accent pill-night">Night</span>}
+                    {doc.leave && (
+                      <span className="pill pill-good pill-night" title="Approved leave, from the Leave page">
+                        {doc.leave.type}
+                        {doc.leave.half ? " ½" : ""}
+                      </span>
+                    )}
+                  </td>
+                  {!hideName && <td className="col-name">{doc.NAME}</td>}
+                  <td className="col-name">{doc.department || "–"}</td>
+                  <td className="col-name">{doc.subDepartment || "–"}</td>
+                  {status && (
+                    <td className="col-status">
+                      {doc.status ? <span className={`pill ${doc.status === "Left" ? "pill-left" : "pill-good"}`}>{doc.status}</span> : "–"}
+                    </td>
+                  )}
+                  {showDate && <td>{doc.Date}</td>}
+                  <td className={`col-punches ${punches ? "" : "punch-empty"}`}>{punches}</td>
+                  <td className={`col-total ${total ? "" : "punch-empty"}`}>{total || "–"}</td>
+                  <td className={`col-lunch ${outs ? "" : "punch-empty"}`} title={lunch ? `Lunch break ${lunch} (${lunchRange(doc)})` : undefined}>
+                    {outs || "–"}
+                  </td>
+                  {simplePairs.map((n) => {
+                    const pair = doc[`pair${n}`] || {};
+                    const guessed = !directionKnown(doc);
+                    // ENTRY times green, EXIT times red.
+                    const cell = (time, side) =>
+                      time ? (
+                        <td className={`punch-${side} ${guessed ? "punch-guess" : ""}`} title={guessed ? "Guessed: no ENTRY/EXIT machine for this day" : undefined}>
+                          {time}
+                        </td>
+                      ) : (
+                        <td className="punch-empty">–</td>
+                      );
+                    return (
+                      <Fragment key={n}>
+                        {cell(pair.IN, "entry")}
+                        {cell(pair.OUT, "exit")}
+                      </Fragment>
+                    );
+                  })}
+                  {simpleMore && (
+                    <td className="col-more">
+                      {(() => {
+                        const extra = pairsOf(doc)
+                          .slice(MAX_PAIR_COLUMNS)
+                          .reduce((sum, pair) => sum + (pair.IN ? 1 : 0) + (pair.OUT ? 1 : 0), 0);
+                        return extra ? `+${extra} punches` : "–";
+                      })()}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   const maxPairs = Math.max(...records.map((doc) => pairsOf(doc).length));
   const hasMore = maxPairs > MAX_PAIR_COLUMNS;
   const pairCols = Array.from({ length: Math.min(maxPairs, MAX_PAIR_COLUMNS) }, (_, i) => i + 1);
@@ -78,7 +182,6 @@ export default function AttendanceTable({
       .slice(MAX_PAIR_COLUMNS)
       .reduce((sum, pair) => sum + (pair.IN ? 1 : 0) + (pair.OUT ? 1 : 0), 0);
   }
-  const today = todayDisplayDate();
 
   return (
     <div className="table-scroll">
@@ -131,13 +234,13 @@ export default function AttendanceTable({
                 <th rowSpan={2} className="col-total" title="The day's final punch, also when it is past the pair columns shown">
                   Last Punch
                 </th>
-                <th rowSpan={2} className="col-total" title="Sum of every completed IN → OUT pair">
+                <th rowSpan={2} className="col-total" title="Time worked inside the office: every ENTRY → EXIT at the main gate added up (lunch and time outside are not counted)">
                   Total Working
                 </th>
                 <th
                   rowSpan={2}
                   className="col-total"
-                  title="Time between an EXIT punch and the next ENTRY punch at the main gate (rows with machine IN/OUT only)"
+                  title="Time out of the office: EXIT to the next ENTRY at the main gate, not counting lunch time 13:00-15:00 (going out for lunch then is allowed). Machine rows only."
                 >
                   Outside
                 </th>
@@ -151,14 +254,14 @@ export default function AttendanceTable({
                 <th
                   rowSpan={2}
                   className="col-total"
-                  title="Time between gate punches that can't be counted as inside or outside because a punch is missing (EXIT then EXIT, or ENTRY then ENTRY). Total Working + Outside + Unaccounted = first to last gate punch."
+                  title="Time between gate punches that can't be counted as inside or outside because a punch is missing (EXIT then EXIT, or ENTRY then ENTRY). Total Working + lunch (13:00-15:00) + Outside + Unaccounted = first to last gate punch."
                 >
                   Unaccounted
                 </th>
                 <th
                   rowSpan={2}
                   className="col-total"
-                  title={`Total Working against a full day: the employee's shift length (less 1 hour lunch for a day shift over 13:00-15:00), or ${FULL_DAY_HOURS} hours without a shift. + extra, - short`}
+                  title={`Total Working + Unaccounted (missed punches count as inside) against a full day: the employee's shift length (less 1 hour lunch for a day shift over 13:00-15:00), or ${FULL_DAY_HOURS} hours without a shift. + extra, - short`}
                 >
                   vs Full Day
                 </th>
@@ -217,8 +320,12 @@ export default function AttendanceTable({
           <tr>
             {pairCols.map((n) => (
               <Fragment key={n}>
-                <th className="col-io-in">IN</th>
-                <th className="col-io-out">OUT</th>
+                <th className="col-io-in" title={register ? "ENTRY machine (IN). On Guess rows the times only alternate." : undefined}>
+                  {register ? "ENTRY" : "IN"}
+                </th>
+                <th className="col-io-out" title={register ? "EXIT machine (OUT). On Guess rows the times only alternate." : undefined}>
+                  {register ? "EXIT" : "OUT"}
+                </th>
               </Fragment>
             ))}
           </tr>
@@ -298,7 +405,10 @@ export default function AttendanceTable({
                     <td className={`col-total ${last ? "" : "punch-empty"}`}>
                       {last ? (
                         <>
-                          {last.time} <span className="last-punch-type">{last.type}</span>
+                          {last.time}{" "}
+                          <span className="last-punch-type">
+                            {register && directionKnown(doc) ? (last.type === "IN" ? "ENTRY" : "EXIT") : last.type}
+                          </span>
                         </>
                       ) : (
                         "–"
@@ -325,10 +435,30 @@ export default function AttendanceTable({
                 )}
                 {pairCols.map((n) => {
                   const pair = doc[`pair${n}`];
+                  const known = register && directionKnown(doc);
+                  const guessed = register && !directionKnown(doc);
+                  // On machine rows a pair missing one side is a missed punch:
+                  // ENTRY missing = came in without punching; EXIT missing =
+                  // went out without punching (not the last pair of today).
+                  const missedIn = known && pair && !pair.IN && pair.OUT;
+                  const missedOut =
+                    known && pair && pair.IN && !pair.OUT && (n < pairsOf(doc).length || dayIsOver(doc));
+                  const cell = (time, missed, label) =>
+                    time ? (
+                      <td className={guessed ? "punch-guess" : ""} title={guessed ? "Guessed: no ENTRY/EXIT machine for this day" : undefined}>
+                        {time}
+                      </td>
+                    ) : missed ? (
+                      <td className="punch-missed" title={`No ${label} punch: missing at the ${label} machine`}>
+                        missed
+                      </td>
+                    ) : (
+                      <td className="punch-empty">–</td>
+                    );
                   return (
                     <Fragment key={n}>
-                      <td className={pair?.IN ? "" : "punch-empty"}>{pair?.IN || "–"}</td>
-                      <td className={pair?.OUT ? "" : "punch-empty"}>{pair?.OUT || "–"}</td>
+                      {cell(pair?.IN, missedIn, "ENTRY")}
+                      {cell(pair?.OUT, missedOut, "EXIT")}
                     </Fragment>
                   );
                 })}

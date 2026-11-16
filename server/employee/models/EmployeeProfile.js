@@ -151,6 +151,12 @@ const employeeProfileSchema = new mongoose.Schema(
     // when connected, else in server/uploads/employees/<employeeId>/
     // (employee/employeeDocuments.js). driveFolderId: this employee's Drive folder.
     driveFolderId: text,
+    // Employee app > My profile: the one correction the employee may make to
+    // their own personal / contact / address / bank details (portal/profile.js).
+    selfCorrection: {
+      at: { type: Date, default: null },
+      changes: [{ _id: false, path: text, before: text, after: text }]
+    },
     documents: [
       {
         _id: false,

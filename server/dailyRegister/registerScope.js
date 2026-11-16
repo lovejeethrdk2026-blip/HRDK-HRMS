@@ -38,10 +38,13 @@ export async function registerScope(req) {
   return { departments, ids };
 }
 
-// An Employees-page profile is in scope by its COSEC ID, or (no ID match) by a
-// department picked whole, i.e. with no sections narrowed.
+// An Employees-page profile is in scope by its COSEC ID -- the Initials No.
+// (Matrix ID; employee codes are EMP_00001 style, not the COSEC ID) or the
+// code itself for older records -- or (no ID match) by a department picked
+// whole, i.e. with no sections narrowed.
 export function profileInScope(scope, ids, employee) {
   return (
+    ids.has(String(employee.initialsNo ?? "").trim()) ||
     ids.has(String(employee.employeeId)) ||
     scope.departments.some((d) => !d.sections.length && sameDepartment(employee.department, d.name))
   );

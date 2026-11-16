@@ -59,7 +59,7 @@ router.post("/:employeeId/exit", exitEmployee);
 router.post("/:employeeId/rejoin", rejoinEmployee);
 // Undo exit button: an exit entered by mistake.
 router.post("/:employeeId/undo-exit", undoExit);
-// Add Employee > Documents: PDF / JPG / PNG files, one per request as the raw body.
+// Add Employee > Documents: PDF / JPG / PNG / Excel files, one per request as the raw body.
 // Login required: these are Aadhaar / PAN / bank papers.
 router.post(
   "/:employeeId/documents",
