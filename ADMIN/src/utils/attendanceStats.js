@@ -417,6 +417,56 @@ export function lunchBreaksRange(doc) {
     .join(", ");
 }
 
+// Every time the employee went out of the gate (EXIT -> next ENTRY) apart from
+// lunch: each break's time outside the 13:00-15:00 window, the same rule as
+// outsideSeconds. A break wholly inside lunch time is left out (Lunch Time Out
+// shows it). The last EXIT with no ENTRY yet on a running day is still out
+// (in "", seconds null). Night rows count every break. [] on a guessed row.
+export function outsideBreaks(doc) {
+  if (!directionKnown(doc)) return [];
+  const lunchFrom = toSeconds(LUNCH_START);
+  const lunchTo = toSeconds(LUNCH_END);
+  const pairs = pairsOf(doc);
+  const breaks = [];
+  pairs.forEach((pair, i) => {
+    const out = toSeconds(pair.OUT);
+    if (out === null) return;
+    const next = pairs[i + 1];
+    const back = toSeconds(next?.IN);
+    if (back === null) {
+      const inLunch = !doc.nightShift && out >= lunchFrom && out <= lunchTo;
+      if (!next && !dayIsOver(doc) && !inLunch) breaks.push({ out: pair.OUT, in: "", seconds: null });
+      return;
+    }
+    let seconds;
+    if (doc.nightShift) seconds = back >= out ? back - out : back + 24 * 3600 - out;
+    else if (back < out) return;
+    else seconds = back - out - Math.max(0, Math.min(back, lunchTo) - Math.max(out, lunchFrom));
+    if (seconds > 0) breaks.push({ out: pair.OUT, in: next.IN, seconds });
+  });
+  return breaks;
+}
+
+// "45m", "1h 05m", "out now" (still outside), or "" with no break.
+export function outsideTimeText(doc) {
+  const breaks = outsideBreaks(doc);
+  if (!breaks.length) return "";
+  const total = breaks.reduce((sum, b) => sum + (b.seconds || 0), 0);
+  const minutes = Math.round(total / 60);
+  const h = Math.floor(minutes / 60);
+  const text = h ? `${h}h ${String(minutes % 60).padStart(2, "0")}m` : minutes || !total ? `${minutes}m` : "<1m";
+  const open = breaks.some((b) => b.seconds === null);
+  if (open && !total) return "out now";
+  return open ? `${text} + out now` : text;
+}
+
+// "11:34–11:43, 12:28–12:37" for a tooltip.
+export function outsideBreaksRange(doc) {
+  return outsideBreaks(doc)
+    .map((b) => `${hhmm(b.out)}–${b.in ? hhmm(b.in) : "…"}`)
+    .join(", ");
+}
+
 // How many times the employee went out during lunch time (13:00-15:00):
 // OUT punches whose time falls inside the window.
 export function lunchOutCount(doc) {

@@ -21,7 +21,10 @@ import {
   earlyOutText,
   lunchOutCount,
   lunchTimeText,
-  lunchBreaksRange
+  lunchBreaksRange,
+  outsideBreaks,
+  outsideTimeText,
+  outsideBreaksRange
 } from "../utils/attendanceStats";
 
 // Some days have dozens of punches (someone passing a reader all day long);
@@ -102,6 +105,9 @@ export default function AttendanceTable({
               <th className="col-lunch" title="Time out on breaks that started between 13:00 and 15:00 (EXIT to the next ENTRY). ×2 = went out twice. Hover a cell for the times.">
                 Lunch Time Out (13:00–15:00)
               </th>
+              <th className="col-lunch" title="Time out of the gate apart from lunch time: every EXIT to the next ENTRY, less any part between 13:00 and 15:00. ×3 = went out 3 times. Hover a cell for the times.">
+                Time Outside
+              </th>
               {simplePairs.map((n) => (
                 <Fragment key={n}>
                   <th className="col-io-in punch-entry-head" title={`Pair ${n}: ENTRY machine (in). On Guess rows the times only alternate.`}>ENTRY</th>
@@ -122,6 +128,8 @@ export default function AttendanceTable({
               const total = totalWorkingText(doc);
               const outs = lunchOutCount(doc);
               const lunchTime = lunchTimeText(doc);
+              const outside = outsideBreaks(doc);
+              const outsideTime = outsideTimeText(doc);
               return (
                 <tr key={doc._id || `${doc.ID}-${doc.Date}`} className={doc.Date === today ? "present-today" : ""}>
                   <td className="col-emp">
@@ -151,6 +159,13 @@ export default function AttendanceTable({
                   >
                     {lunchTime || "–"}
                     {outs > 1 && <span className="lunch-times"> ×{outs}</span>}
+                  </td>
+                  <td
+                    className={`col-lunch ${outsideTime ? "" : "punch-empty"}`}
+                    title={outsideTime ? `Out ${outsideBreaksRange(doc)}${outside.length > 1 ? ` (${outside.length} times)` : ""}` : undefined}
+                  >
+                    {outsideTime || "–"}
+                    {outside.length > 1 && <span className="lunch-times"> ×{outside.length}</span>}
                   </td>
                   {simplePairs.map((n) => {
                     const pair = doc[`pair${n}`] || {};
