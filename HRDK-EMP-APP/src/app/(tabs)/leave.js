@@ -3,6 +3,7 @@ import { Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native
 import { router, useFocusEffect } from "expo-router";
 import { cancelLeave, getLeave } from "../../api/me";
 import Ring from "../../ui/Ring";
+import { useFeatures } from "../../auth/AuthContext";
 import { Button, Card, Empty, ErrorText, LoadingCards, niceDate, Pill, Screen, Section, STATUS_TONE, tap } from "../../ui/components";
 import { useLoad } from "../../ui/useLoad";
 import { radius, space, type, useTheme } from "../../ui/theme";
@@ -24,6 +25,7 @@ const TYPE_TONE = { CL: "brand", SL: "good", PL: "gold" };
 // where it stands. Apply leave stays pinned at the bottom.
 export default function Leave() {
   const c = useTheme();
+  const { leaveApply } = useFeatures(); // HR can switch applying off
   const { data, error, loading, reload } = useLoad(getLeave, []);
 
   // Back from Apply leave: show the new request.
@@ -58,7 +60,7 @@ export default function Leave() {
       subtitle={fy}
       refreshing={loading}
       onRefresh={reload}
-      footer={<Button title="Apply leave" icon="add" onPress={() => router.push("/apply-leave")} />}
+      footer={leaveApply ? <Button title="Apply leave" icon="add" onPress={() => router.push("/apply-leave")} /> : null}
     >
       <ErrorText error={error} />
 
@@ -75,17 +77,20 @@ export default function Leave() {
                   <Pressable
                     key={t.code}
                     style={styles.ringCell}
+                    disabled={!leaveApply}
                     onPress={() => {
                       tap();
                       router.push("/apply-leave");
                     }}
-                    accessibilityLabel={`${t.name}: ${b.left} of ${total} left`}
+                    accessibilityLabel={`${t.name}: ${b.left} of ${total} left, ${b.used || 0} taken${b.pending ? `, ${b.pending} waiting for approval` : ""}`}
                   >
                     <Ring share={total ? (b.left ?? 0) / total : 0} size={86} stroke={9} value={String(b.left ?? "–")} unit={`of ${total}`} color={c[TYPE_TONE[t.code] || "brand"]} track={c.sunk} />
                     <Text style={[type.label, { color: c.text, fontWeight: "600", textAlign: "center" }]} numberOfLines={1}>
                       {t.name.replace(" Leave", "")}
                     </Text>
-                    {b.pending ? <Text style={[type.small, { color: c.warn }]}>{b.pending} waiting</Text> : <Text style={[type.small, { color: c.faint }]}>taken {b.used || 0}</Text>}
+                    <Text style={[type.small, { color: c.muted }]}>Left {b.left ?? "–"} of {total}</Text>
+                    <Text style={[type.small, type.figure, { color: c.faint }]}>Taken {b.used || 0}</Text>
+                    {b.pending ? <Text style={[type.small, type.figure, { color: c.warn }]}>Waiting {b.pending}</Text> : null}
                   </Pressable>
                 );
               })}
@@ -101,7 +106,7 @@ export default function Leave() {
           {pending.length > 0 && (
             <Section title="Waiting for approval">
               {pending.map((app) => (
-                <Request key={app._id} app={app} typeName={typeName} onCancel={() => askCancel(app)} />
+                <Request key={app._id} app={app} typeName={typeName} onCancel={leaveApply ? () => askCancel(app) : undefined} />
               ))}
             </Section>
           )}

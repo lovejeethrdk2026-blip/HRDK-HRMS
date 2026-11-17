@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import Constants from "expo-constants";
 import { getDocumentLink, getDocuments, getProfileDetails } from "../../api/me";
 import { API_URL, DEMO } from "../../api/client";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth, useFeatures } from "../../auth/AuthContext";
 import { Card, ListRow, Pill, Progress, Screen, Section, showDate } from "../../ui/components";
 import { useLoad } from "../../ui/useLoad";
 import { radius, space, type, useTheme } from "../../ui/theme";
@@ -24,7 +24,8 @@ const say = (title, message) => (Platform.OS === "web" ? window.alert(`${title}\
 export default function Me() {
   const c = useTheme();
   const { employee, signOut } = useAuth();
-  const { data: docs, loading, reload } = useLoad(getDocuments, []);
+  const f = useFeatures(); // what HR lets the app show
+  const { data: docs, loading, reload } = useLoad(() => (f.documents ? getDocuments() : Promise.resolve([])), [f.documents]);
   const { data: details, reload: reloadDetails } = useLoad(() => getProfileDetails().catch(() => null), []);
   const missing = details ? details.missingFields.length + details.missingDocuments.length : 0;
   const required = details?.required || 0;
@@ -97,14 +98,17 @@ export default function Me() {
           note="Personal details, address, bank and documents"
           onPress={() => router.push("/profile")}
           right={missing ? <Pill text={`${missing} missing`} tone="bad" /> : null}
+          last={!f.chat}
         />
-        <ListRow
-          icon="chatbubble-ellipses-outline"
-          label="Chat with my manager and HR"
-          note="Only your manager and HR can read it"
-          onPress={() => router.push("/chat")}
-          last
-        />
+        {f.chat ? (
+          <ListRow
+            icon="chatbubble-ellipses-outline"
+            label="Chat with my manager and HR"
+            note="Only your manager and HR can read it"
+            onPress={() => router.push("/chat")}
+            last
+          />
+        ) : null}
       </Card>
 
       <Section title="Work">

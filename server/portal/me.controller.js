@@ -10,6 +10,7 @@ import { applyLeave, cancelLeave, listBalances, listTypes } from "../leave/leave
 import { LeaveApplication } from "../leave/models/Leave.js";
 import { fetchPaySheet, PaySheetError } from "../paySheet/paySheet.controller.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { appFeatures } from "../appSettings/appSettings.route.js";
 import * as stats from "../../ADMIN/src/utils/attendanceStats.js";
 
 // The employee app (HRDK-EMP-APP): every route works on the logged-in
@@ -70,7 +71,9 @@ async function employeeFor(id) {
     reportingManager: profile?.reportingManager || "",
     mobile: mobile.length >= 4 ? `${mobile.slice(0, 2)}xxxxxx${mobile.slice(-2)}` : "",
     shift: profile?.shift?.in && profile?.shift?.out ? profile.shift : null,
-    active: master.isActive !== false && !master.leavingDate
+    active: master.isActive !== false && !master.leavingDate,
+    // What HR lets the app show (Employee App settings).
+    features: await appFeatures()
   };
 }
 
@@ -171,6 +174,13 @@ export const attendance = handle(async (req, res) => {
     const halfDay = total.seconds < stats.fullDaySeconds(doc) / 2 && !total.open;
     day.status = onLeave?.half || (halfDay && iso !== todayIso) ? "H" : "P";
     days.push(day);
+  }
+  // Punch times switched off (Employee App settings): status and worked
+  // hours only.
+  if (!(await appFeatures()).punchTimes) {
+    for (const day of days) {
+      for (const key of ["in", "out", "pairs", "late", "earlyOut", "outside", "missed", "source"]) delete day[key];
+    }
   }
   res.json({ month, shift, days });
 });

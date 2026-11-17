@@ -197,6 +197,14 @@ export default function Attendance() {
                       <Text style={[type.small, { color: c.faint }]}>No ENTRY / EXIT machine record this day, so in and out are estimated.</Text>
                     ) : null}
                   </>
+                ) : day?.worked ? (
+                  // Punch times switched off by HR: status and worked hours only.
+                  <>
+                    <View style={styles.facts}>
+                      <Fact label="Worked" value={day.worked.replace(" (in)", "")} strong />
+                    </View>
+                    {day.leave ? <Note icon="airplane-outline" tone="info" text={`Leave: ${day.leave.type}${day.leave.half ? ", half day" : ""}`} /> : null}
+                  </>
                 ) : (
                   <Text style={[type.body, { color: c.muted }]}>
                     {day?.status === "WO"

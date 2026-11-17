@@ -2,7 +2,7 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getAttendance, getChatUnread, getLeave, getPayslips, getProfileDetails } from "../../api/me";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth, useFeatures } from "../../auth/AuthContext";
 import DayStrip from "../../ui/DayStrip";
 import Ring from "../../ui/Ring";
 import { Card, ErrorText, IconCircle, ListRow, LoadingCards, monthName, Pill, Progress, rupees, Screen, Section, tap } from "../../ui/components";
@@ -58,22 +58,24 @@ function weekOf(date) {
 // glance, this week's days, and a nudge when the profile has gaps.
 export default function Home() {
   const c = useTheme();
-  const { employee } = useAuth();
+  const { employee, refresh } = useAuth();
+  const f = useFeatures(); // what HR lets the app show
   const now = new Date();
   const todayIso = isoOf(now);
   const week = weekOf(now);
   const months = [...new Set(week.map((d) => isoOf(d).slice(0, 7)))].filter((m) => m <= todayIso.slice(0, 7));
 
+  // Only what is switched on is fetched (the server refuses the rest).
   const { data, error, loading, reload } = useLoad(async () => {
     const [att, leave, payslips, profile, chat] = await Promise.all([
-      Promise.all(months.map((m) => getAttendance(m))),
-      getLeave(),
-      getPayslips().catch(() => []),
+      f.attendance ? Promise.all(months.map((m) => getAttendance(m))) : [],
+      f.leave ? getLeave() : { types: [], balances: {}, applications: [] },
+      f.salary ? getPayslips().catch(() => []) : [],
       getProfileDetails().catch(() => null),
-      getChatUnread().catch(() => ({ unread: 0 }))
+      f.chat ? getChatUnread().catch(() => ({ unread: 0 })) : { unread: 0 }
     ]);
     return { days: att.flatMap((a) => a.days), shift: att[att.length - 1]?.shift || null, leave, payslips, profile, unread: chat.unread };
-  }, [todayIso]);
+  }, [todayIso, f.attendance, f.leave, f.salary, f.chat]);
 
   const byDate = new Map((data?.days || []).map((d) => [d.date, d]));
   const day = byDate.get(todayIso);
@@ -90,7 +92,14 @@ export default function Home() {
   const left = Math.max(0, full - worked);
 
   return (
-    <Screen safeTop refreshing={loading} onRefresh={reload}>
+    <Screen
+      safeTop
+      refreshing={loading}
+      onRefresh={() => {
+        refresh(); // picks up switches HR changed
+        reload();
+      }}
+    >
       <View style={styles.header}>
         <View style={[styles.logo, elevation(c)]}>
           <Image source={LOGO} style={styles.logoImg} resizeMode="contain" accessibilityLabel="HRDK" />
@@ -101,7 +110,7 @@ export default function Home() {
             {firstName(employee?.name)}
           </Text>
         </View>
-        <RoundIcon icon="chatbubble-ellipses-outline" label="Chat with my manager and HR" dot={data?.unread > 0} onPress={() => router.push("/chat")} />
+        {f.chat ? <RoundIcon icon="chatbubble-ellipses-outline" label="Chat with my manager and HR" dot={data?.unread > 0} onPress={() => router.push("/chat")} /> : null}
         <RoundIcon icon="person-outline" label="My profile" dot={missing > 0} onPress={() => router.push("/profile")} />
       </View>
 
@@ -111,6 +120,7 @@ export default function Home() {
         <LoadingCards count={3} />
       ) : (
         <>
+          {f.attendance ? (
           <Card tone="brand" onPress={() => router.push("/attendance")}>
             <View style={styles.heroTop}>
               <View style={{ flex: 1, gap: space.xs }}>
@@ -132,26 +142,34 @@ export default function Home() {
               </View>
             ) : null}
           </Card>
+          ) : null}
 
-          <View style={styles.pair}>
-            <StatCard
-              icon="airplane"
-              tone="brand"
-              label="Leave left"
-              value={leaveTypes.length ? String(leaveLeft) : "–"}
-              unit={leaveTypes.map((t) => `${t.code} ${data.leave.balances[t.code]?.left ?? 0}`).join(", ")}
-              onPress={() => router.push("/leave")}
-            />
-            <StatCard
-              icon="wallet"
-              tone="gold"
-              label="Last salary"
-              value={latest ? rupees(latest.net) : "–"}
-              unit={latest ? monthName(latest.month) : "Not paid yet"}
-              onPress={() => router.push(latest ? `/payslip/${latest.month}` : "/payslip")}
-            />
-          </View>
+          {f.leave || f.salary ? (
+            <View style={styles.pair}>
+              {f.leave ? (
+                <StatCard
+                  icon="airplane"
+                  tone="brand"
+                  label="Leave left"
+                  value={leaveTypes.length ? String(leaveLeft) : "–"}
+                  unit={leaveTypes.map((t) => `${t.code} ${data.leave.balances[t.code]?.left ?? 0}`).join(", ")}
+                  onPress={() => router.push("/leave")}
+                />
+              ) : null}
+              {f.salary ? (
+                <StatCard
+                  icon="wallet"
+                  tone="gold"
+                  label="Last salary"
+                  value={latest ? rupees(latest.net) : "–"}
+                  unit={latest ? monthName(latest.month) : "Not paid yet"}
+                  onPress={() => router.push(latest ? `/payslip/${latest.month}` : "/payslip")}
+                />
+              ) : null}
+            </View>
+          ) : null}
 
+          {f.attendance ? (
           <Section title="This week" right={<Text style={[type.label, { color: c.muted }]}>{monthName(todayIso.slice(0, 7))}</Text>}>
             <Card>
               <View style={styles.week}>
@@ -183,6 +201,7 @@ export default function Home() {
               </View>
             </Card>
           </Section>
+          ) : null}
 
           {missing > 0 && (
             <Card onPress={() => router.push("/profile")}>
@@ -200,17 +219,23 @@ export default function Home() {
             </Card>
           )}
 
-          <Card padded={false}>
-            <ListRow icon="add-circle-outline" label="Apply leave" note="Sent to your manager for approval" onPress={() => router.push("/apply-leave")} />
-            <ListRow
-              icon="chatbubble-ellipses-outline"
-              label="Chat with my manager and HR"
-              note={data?.unread ? `${data.unread} new message${data.unread > 1 ? "s" : ""}` : "Ask anything about work or pay"}
-              right={data?.unread ? <Pill text={String(data.unread)} tone="bad" /> : null}
-              onPress={() => router.push("/chat")}
-              last
-            />
-          </Card>
+          {f.leaveApply || f.chat ? (
+            <Card padded={false}>
+              {f.leaveApply ? (
+                <ListRow icon="add-circle-outline" label="Apply leave" note="Sent to your manager for approval" onPress={() => router.push("/apply-leave")} last={!f.chat} />
+              ) : null}
+              {f.chat ? (
+                <ListRow
+                  icon="chatbubble-ellipses-outline"
+                  label="Chat with my manager and HR"
+                  note={data?.unread ? `${data.unread} new message${data.unread > 1 ? "s" : ""}` : "Ask anything about work or pay"}
+                  right={data?.unread ? <Pill text={String(data.unread)} tone="bad" /> : null}
+                  onPress={() => router.push("/chat")}
+                  last
+                />
+              ) : null}
+            </Card>
+          ) : null}
         </>
       )}
     </Screen>

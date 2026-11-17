@@ -16,7 +16,7 @@ const money = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 const titleCase = (s) => s.replace(/\b\w/g, (c) => c.toUpperCase());
 
 // On / off switch with a sliding knob and a Yes / No word beside it.
-function Toggle({ id, value, onChange, disabled }) {
+export function Toggle({ id, value, onChange, disabled }) {
   return (
     <button
       id={id}
@@ -57,7 +57,7 @@ function Amount({ id, value, onChange, unit, disabled, step = "1" }) {
 }
 
 // One setting: name and a plain-words explanation on the left, control on the right.
-function Row({ id, label, hint, disabled, children }) {
+export function Row({ id, label, hint, disabled, children }) {
   return (
     <div className={`prs-row ${disabled ? "is-disabled" : ""}`}>
       <div className="prs-row-text">
@@ -91,7 +91,7 @@ function StateSelect({ id, value, onChange, counts, exclude, placeholder, label 
   );
 }
 
-function Section({ id, title, intro, children }) {
+export function Section({ id, title, intro, children }) {
   return (
     <section className="prs-section" id={id} aria-labelledby={`${id}-title`}>
       <header>

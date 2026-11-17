@@ -3,6 +3,7 @@ import { Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native
 import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { correctProfile, getProfileDetails, uploadMyDocument } from "../api/me";
+import { useFeatures } from "../auth/AuthContext";
 import { Button, Card, ErrorText, Field, IconCircle, LoadingCards, Pill, Progress, Screen, Section, showDate, tap } from "../ui/components";
 import { useLoad } from "../ui/useLoad";
 import { radius, space, type, useTheme } from "../ui/theme";
@@ -35,6 +36,7 @@ const SECTION_ICON = {
 
 export default function Profile() {
   const c = useTheme();
+  const { profileEdit } = useFeatures(); // HR can switch fixing details off
   const { data, error, loading, reload } = useLoad(getProfileDetails, []);
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState({});
@@ -52,7 +54,7 @@ export default function Profile() {
   }
 
   const editable = data.sections.flatMap((s) => s.fields).filter((f) => f.editable);
-  const canCorrect = !data.correction.used && editable.length > 0;
+  const canCorrect = profileEdit && !data.correction.used && editable.length > 0;
   const missingCount = data.missingFields.length + data.missingDocuments.length;
   const complete = data.required ? (data.required - missingCount) / data.required : 0;
 
@@ -246,6 +248,8 @@ export default function Profile() {
                   </View>
                   {done ? (
                     <Ionicons name="lock-closed" size={16} color={c.faint} />
+                  ) : !profileEdit ? (
+                    <Text style={[type.small, { color: c.faint }]}>Give to HR</Text>
                   ) : (
                     <Pressable
                       onPress={() => upload(doc.title)}

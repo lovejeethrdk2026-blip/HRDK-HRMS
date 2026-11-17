@@ -34,7 +34,25 @@ export function AuthProvider({ children }) {
     setEmployee(null);
   }, []);
 
-  return <AuthContext.Provider value={{ employee, checking, signIn, signOut }}>{children}</AuthContext.Provider>;
+  // Fetches the employee again (Home pull-to-refresh), so switches HR changed
+  // in Employee App settings reach the app without logging out.
+  const refresh = useCallback(async () => {
+    try {
+      setEmployee(await getProfile());
+    } catch {
+      // keep what we have; a signed-out answer goes through the handler above
+    }
+  }, []);
+
+  return <AuthContext.Provider value={{ employee, checking, signIn, signOut, refresh }}>{children}</AuthContext.Provider>;
 }
 
 export const useAuth = () => useContext(AuthContext);
+
+// What HR lets this app show (server: Employee App settings). Everything on
+// when the server does not send them (older server, demo data).
+const ALL_ON = { attendance: true, punchTimes: true, leave: true, leaveApply: true, salary: true, chat: true, documents: true, profileEdit: true };
+export function useFeatures() {
+  const { employee } = useAuth();
+  return { ...ALL_ON, ...(employee?.features || {}) };
+}

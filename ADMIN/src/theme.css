@@ -7753,3 +7753,10 @@ button.lv-stat:hover { border-color: var(--border-strong); background: var(--hov
 .msp-ph { background: var(--brass-soft); border-color: transparent; }
 .msp-ph .msp-day-code { color: var(--brass-deep); }
 .msp-day-holiday { max-width: 64px; margin: 0 auto; font-size: 10px; font-weight: 600; line-height: 1.2; color: var(--brass-deep); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Employee App settings: "What employees see" list */
+.aps-see > div { align-items: baseline; }
+.aps-see dt { color: var(--text); font-weight: 600; white-space: nowrap; }
+.aps-see dd { font-weight: 500; color: var(--text-muted); text-align: right; }
+.aps-see > div.is-off dt { color: var(--text-muted); text-decoration: line-through; }
+.aps-see > div.is-off dd { color: var(--bad); }

@@ -148,6 +148,10 @@ function UserMenu({ onNavigate }) {
                 <MenuIcon name="admin" />
                 Payroll settings
               </button>
+              <button role="menuitem" onClick={() => pick(() => onNavigate("appSettings"))}>
+                <MenuIcon name="admin" />
+                Employee app settings
+              </button>
             </>
           )}
           <button role="menuitem" onClick={() => pick(() => setChanging(true))}>

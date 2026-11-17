@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { Redirect, Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth, useFeatures } from "../../auth/AuthContext";
 import { Loading } from "../../ui/components";
 import { useTheme } from "../../ui/theme";
 
@@ -11,11 +11,12 @@ import { useTheme } from "../../ui/theme";
 // never sits under Android's back / home buttons; screens end above it.
 // Attendance sits in the middle as a raised round button. Each tab draws its
 // own large title, so no header bar.
+// [route, title, icon, centre button, Employee App switch that shows it]
 const TABS = [
   ["index", "Home", "home"],
-  ["leave", "Leave", "airplane"],
-  ["attendance", "Attendance", "calendar", true],
-  ["payslip", "Salary", "wallet"],
+  ["leave", "Leave", "airplane", false, "leave"],
+  ["attendance", "Attendance", "calendar", true, "attendance"],
+  ["payslip", "Salary", "wallet", false, "salary"],
   ["more", "Me", "person-circle"]
 ];
 
@@ -35,6 +36,7 @@ export default function TabsLayout() {
   const c = useTheme();
   const insets = useSafeAreaInsets();
   const { employee, checking } = useAuth();
+  const features = useFeatures();
   if (checking) return <Loading />;
   if (!employee) return <Redirect href="/login" />;
 
@@ -62,13 +64,15 @@ export default function TabsLayout() {
         sceneStyle: { backgroundColor: c.bg }
       }}
     >
-      {TABS.map(([name, title, icon, centre]) => (
+      {TABS.map(([name, title, icon, centre, feature]) => (
         <Tabs.Screen
           key={name}
           name={name}
           options={{
             title,
-            ...(centre
+            ...(feature && !features[feature]
+              ? { href: null } // switched off by HR: no tab
+              : centre
               ? { tabBarLabel: () => null, tabBarButton: (props) => <CentreButton {...props} /> }
               : {
                   tabBarIcon: ({ color, size, focused }) => (

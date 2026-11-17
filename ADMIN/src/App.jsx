@@ -17,6 +17,7 @@ const Departments = lazy(() => import("./pages/Departments"));
 const Leave = lazy(() => import("./pages/Leave"));
 const Holidays = lazy(() => import("./pages/Holidays"));
 const PayrollSettings = lazy(() => import("./pages/PayrollSettings"));
+const AppSettings = lazy(() => import("./pages/AppSettings"));
 const Messages = lazy(() => import("./pages/Messages"));
 const EmpCost = lazy(() => import("./pages/EmpCost"));
 const MonthShiftPay = lazy(() => import("./pages/MonthShiftPay"));
@@ -51,7 +52,8 @@ const PAGES = {
   financialSummary: FinancialSummary,
   users: Users, // admin only (top-right menu)
   roles: Roles, // admin only (top-right menu)
-  payrollSettings: PayrollSettings // admin (HR) only (top-right menu)
+  payrollSettings: PayrollSettings, // admin (HR) only (top-right menu)
+  appSettings: AppSettings // admin (HR) only: what the employee app shows
 };
 
 // The permission each page needs (Roles & Permissions page). "admin": admins only.
@@ -79,7 +81,8 @@ const PAGE_PERMISSION = {
   financialSummary: "paysheet.reports",
   users: "admin",
   roles: "admin",
-  payrollSettings: "admin"
+  payrollSettings: "admin",
+  appSettings: "admin"
 };
 
 export default function App() {
