@@ -23,17 +23,22 @@
 //   employee PF, ESIC and PT (inHandFor). Total pay = in hand (+ OT pay).
 
 import { totalWorking, fullDaySeconds, lateSeconds, earlyOutSeconds } from "./attendanceStats";
-import { employeeOn, isWorkingOn, salaryForMonth, professionalTax } from "@salary";
+import { employeeOn, isWorkingOn, salaryForMonth, professionalTax, payrollSettings } from "@salary";
 
 // In hand for the paid part of a month, from the employee's salary split
 // (Add Employee, server/utils/salaryFormulas.js): basic, HRA, bonus and special
-// scaled by paidDays / daysInMonth, less the employee's PF (12% of basic +
-// bonus + special, rounded up, at most 3000), ESIC (0.75% of basic) and
-// Professional Tax on that earned gross. Employer PF / ESIC stay inside CTC.
+// scaled by paidDays / daysInMonth, less the employee's PF (Payroll Settings
+// employee rate, default 12%, of basic + bonus + special, rounded up, at most
+// the PF cap, default 3000, when the ceiling is required), ESIC (0.75% of
+// basic) and Professional Tax on that earned gross. Employer PF / ESIC stay
+// inside CTC.
 function inHandFor(split, ratio, state, monthNo) {
+  const settings = payrollSettings();
   const gross = (split.basic + split.hra + split.statutoryBonus + split.specialAllowance) * ratio;
   const pfWage = (split.basic + split.statutoryBonus + split.specialAllowance) * ratio;
-  const pf = split.pfEmployee ? Math.min(Math.ceil(Math.round(pfWage * 12) / 100), 3000) : 0;
+  const pfRate = Number(settings.pfEmployeeRate) || 0;
+  const pfAmount = Math.ceil(Math.round(pfWage * pfRate) / 100);
+  const pf = split.pfEmployee ? (settings.pfCeilingRequired ? Math.min(pfAmount, settings.pfMaxAmount) : pfAmount) : 0;
   const esic = split.esicEmployee * ratio;
   const pt = gross > 0 ? professionalTax(gross, state, monthNo) : 0;
   return { gross, pf, esic, pt, inHand: gross - pf - esic - pt };

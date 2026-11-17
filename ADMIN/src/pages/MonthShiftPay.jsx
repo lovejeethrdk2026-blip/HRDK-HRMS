@@ -4,6 +4,7 @@ import Loader from "../components/Loader";
 import RegisterScopeNote from "../components/RegisterScopeNote";
 import { formatDuration } from "../utils/attendanceStats";
 import { monthShiftPay } from "../utils/monthShiftPay";
+import { payrollSettings } from "@salary";
 
 // Payroll > Month Shift Register & Pay: for one month, every employee's days
 // measured against their shift (Daily Register) and pay from their monthly CTC
@@ -85,6 +86,7 @@ async function exportToExcel(rows, month, includeOt) {
 }
 
 export default function MonthShiftPay() {
+  const pfs = payrollSettings(); // rates shown in the rules note
   const [month, setMonth] = useState(thisMonth);
   const [register, setRegister] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -213,7 +215,9 @@ export default function MonthShiftPay() {
           <li>Per day = monthly CTC ÷ {result.daysInMonth} days. Earned CTC = per day × paid days.</li>
           <li>
             Gross = basic + HRA + bonus + special (employee master salary split) × paid days ÷ {result.daysInMonth}. In hand = gross
-            − employee PF (12% of basic + bonus + special, max 3000) − ESIC (0.75% of basic) − Professional Tax (state slab).
+            − employee PF ({pfs.pfEmployeeRate}% of basic + bonus + special
+            {pfs.pfCeilingRequired ? `, max ${pfs.pfMaxAmount}` : ""}) − ESIC ({pfs.esicEmployeeRate}% of basic) − Professional Tax
+            (state slab). Rates from Payroll Settings.
             Employer PF / ESIC are part of CTC, not paid out. Total pay = in hand (+ OT pay when ticked).
           </li>
           <li>OT hrs = time worked beyond the full day. OT pay = OT hrs × (per day ÷ full-day hours).</li>
