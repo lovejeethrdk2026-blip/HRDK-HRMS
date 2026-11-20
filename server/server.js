@@ -27,6 +27,7 @@ import payrollSettingsRoutes from "./payrollSettings/payrollSettings.route.js";
 import appSettingsRoutes from "./appSettings/appSettings.route.js";
 import meRoutes from "./portal/me.route.js";
 import chatRoutes from "./chat/chat.route.js";
+import shiftRoutes from "./shifts/shifts.route.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 import { trackLastSeen } from "./middleware/lastSeen.js";
 
@@ -62,6 +63,7 @@ app.use("/api/payroll-settings", payrollSettingsRoutes);
 app.use("/api/app-settings", appSettingsRoutes);
 app.use("/api/me", meRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/shifts", shiftRoutes); // Employees > Shift > Shifts tab
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });

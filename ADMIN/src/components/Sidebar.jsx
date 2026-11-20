@@ -70,7 +70,10 @@ export const MENU = [
           { key: "employees", label: "All Employees" },
           { key: "bulkIncrement", label: "Salary increment" },
           { key: "bulkDepartmentChange", label: "Department change" },
-          { key: "bulkStateChange", label: "State change" }
+          { key: "bulkStateChange", label: "State change" },
+          // The one place shifts are given, many at once (pages/BulkShift.jsx).
+          // Shift list + Assign shift, two tabs on one page (pages/BulkShift.jsx).
+          { key: "bulkShift", label: "Shift" }
         ]
       },
       // Department -> sub-department -> employees, from the COSEC master.
@@ -125,7 +128,9 @@ export const MENU = [
         ]
       },
       // Days vs shift from the Daily Register, pay from master CTC (calculation only).
-      { key: "monthShiftPay", label: "Month Shift Register & Pay", icon: "ledger" }
+      { key: "monthShiftPay", label: "Month Shift Register & Pay", icon: "ledger" },
+      // HR's own pay components, used by Month Shift Pay (pages/PayFormulas.jsx).
+      { key: "payFormulas", label: "Pay Formulas", icon: "sheet" }
     ]
   }
 ];

@@ -64,7 +64,7 @@ function Applicable({ label, value }) {
 // The rest of the joining sheet, shown when a card is opened: section title
 // and [label, value] rows. The CTC rows only when the role may see salary.
 function detailSections(employee, seeSalary) {
-  const { otherId = {}, emergencyContact = {}, address = {}, bank = {}, shift = {} } = employee;
+  const { otherId = {}, emergencyContact = {}, address = {}, bank = {} } = employee;
   const permanent = employee.permanentAddress || {};
   const ctcRows = seeSalary
     ? [
@@ -139,13 +139,6 @@ function detailSections(employee, seeSalary) {
         ["Bank name", bank.bankName],
         ["Account no.", bank.accountNo],
         ["IFSC code", bank.ifscCode]
-      ]
-    ],
-    [
-      "Shift",
-      [
-        ["In", shift.in],
-        ["Out", shift.out]
       ]
     ]
   ];

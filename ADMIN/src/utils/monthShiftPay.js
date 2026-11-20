@@ -20,28 +20,54 @@
 //   x paid days. Hourly rate = per-day rate / full-day hours (for OT pay).
 //   CTC is the one on the month's last day (pay history), from Add Employee.
 // - In hand = earned gross (salary split x paid days / days in month) less
-//   employee PF, ESIC and PT (inHandFor). Total pay = in hand (+ OT pay).
+//   employee PF, ESIC and PT. Total pay = in hand (+ OT pay).
+// - Per day, earned CTC, OT pay, gross, PF, ESIC, PT and in hand come from the
+//   month pay formulas (Pay Formulas page, "Month pay"; monthPay in
+//   server/utils/salaryFormulas.js). The standard ones give the rules above.
+// - Pay Formulas (HR's own components, Payroll > Pay Formulas): each active
+//   one is worked out per employee from the figures above (monthInputs);
+//   earnings add to, deductions cut, the net pay.
 
 import { totalWorking, fullDaySeconds, lateSeconds, earlyOutSeconds } from "./attendanceStats";
-import { employeeOn, isWorkingOn, salaryForMonth, professionalTax, payrollSettings } from "@salary";
+import { employeeOn, isWorkingOn, salaryForMonth, payrollSettings, applyComponents, monthPay, settingVariables } from "@salary";
 
-// In hand for the paid part of a month, from the employee's salary split
-// (Add Employee, server/utils/salaryFormulas.js): basic, HRA, bonus and special
-// scaled by paidDays / daysInMonth, less the employee's PF (Payroll Settings
-// employee rate, default 12%, of basic + bonus + special, rounded up, at most
-// the PF cap, default 3000, when the ceiling is required), ESIC (0.75% of
-// basic) and Professional Tax on that earned gross. Employer PF / ESIC stay
-// inside CTC.
-function inHandFor(split, ratio, state, monthNo) {
-  const settings = payrollSettings();
-  const gross = (split.basic + split.hra + split.statutoryBonus + split.specialAllowance) * ratio;
-  const pfWage = (split.basic + split.statutoryBonus + split.specialAllowance) * ratio;
-  const pfRate = Number(settings.pfEmployeeRate) || 0;
-  const pfAmount = Math.ceil(Math.round(pfWage * pfRate) / 100);
-  const pf = split.pfEmployee ? (settings.pfCeilingRequired ? Math.min(pfAmount, settings.pfMaxAmount) : pfAmount) : 0;
-  const esic = split.esicEmployee * ratio;
-  const pt = gross > 0 ? professionalTax(gross, state, monthNo) : 0;
-  return { gross, pf, esic, pt, inHand: gross - pf - esic - pt };
+// The month's figures the month pay formulas and Pay Formulas use
+// (server/utils/payFormula.js PAY_VARIABLES), unrounded.
+function monthInputs({ totals, split, pay, monthNo, daysInMonth, employee, monthlyCtc, fullDayHours }) {
+  const hrs = (seconds) => seconds / 3600;
+  return {
+    CTC: monthlyCtc,
+    BASIC: split.basic || 0,
+    HRA: split.hra || 0,
+    SPECIAL: split.specialAllowance || 0,
+    BONUS: split.statutoryBonus || 0,
+    PF_APPLICABLE: split.pfEmployee ? 1 : 0,
+    ESIC_APPLICABLE: split.esicEmployee ? 1 : 0,
+    FULL_PF: split.pfEmployee || 0,
+    FULL_ESIC: split.esicEmployee || 0,
+    FULL_IN_HAND: split.inHand || 0,
+    DAYS_IN_MONTH: daysInMonth,
+    PAID_DAYS: totals.paidDays,
+    PRESENT: totals.present,
+    HALF_DAYS: totals.halfDays,
+    ABSENT: totals.absent,
+    WEEKLY_OFFS: totals.weeklyOffs,
+    WO_WORKED: totals.woWorked,
+    HOLIDAYS: totals.holidays,
+    HOLIDAY_WORKED: totals.holidayWorked,
+    LEAVE_DAYS: totals.leaveDays,
+    LATE_DAYS: totals.lateDays,
+    LATE_HOURS: hrs(totals.lateSeconds),
+    EARLY_OUT_DAYS: totals.earlyOutDays,
+    WORKED_HOURS: hrs(totals.workedSeconds),
+    OT_HOURS: hrs(totals.overtimeSeconds),
+    SHORT_HOURS: hrs(totals.shortSeconds),
+    FULL_DAY_HOURS: fullDayHours,
+    MONTH: monthNo,
+    STATE: split.state || employee.state || "",
+    DEPARTMENT: pay.department || employee.department || "",
+    SALARY_TYPE: employee.salaryType || ""
+  };
 }
 
 const WEEK_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -110,6 +136,7 @@ export function monthShiftPay({ rows, employees, month, holidays = [], fullShare
   const daysInMonth = new Date(Date.UTC(year, monthNo, 0)).getUTCDate();
   const lastDayIso = `${yyyy}-${mm}-${pad(daysInMonth)}`;
   const today = todayNumber();
+  const components = (payrollSettings().formulas || []).filter((c) => c.active !== false);
 
   // "ID|DD-MM-YYYY" -> register row
   const byDay = new Map();
@@ -173,14 +200,12 @@ export function monthShiftPay({ rows, employees, month, holidays = [], fullShare
     if (!counted) continue; // not on the rolls in the days counted so far
 
     const fullDayHours = fullDaySeconds({ shift }) / 3600 || 8;
-    const perDay = monthlyCtc / daysInMonth;
-    const perHour = perDay / fullDayHours;
-    const earned = perDay * totals.paidDays;
-    const otPay = perHour * (totals.overtimeSeconds / 3600);
     const split = salaryForMonth(employee, year, monthNo);
-    const pay2 = monthlyCtc ? inHandFor(split, totals.paidDays / daysInMonth, split.state, monthNo) : null;
+    const inputs = monthInputs({ totals, split, pay, monthNo, daysInMonth, employee, monthlyCtc, fullDayHours });
+    const month = monthPay(inputs); // month pay formulas
+    const m = (code) => Number(month.values[code]) || 0;
 
-    result.push({
+    const row = {
       employeeId: employee.employeeId,
       cosecId: id,
       name: employee.name || "",
@@ -196,19 +221,41 @@ export function monthShiftPay({ rows, employees, month, holidays = [], fullShare
       daysCounted: counted,
       ...totals,
       paidDays: round2(totals.paidDays),
-      perDay: round2(perDay),
-      perHour: round2(perHour),
-      earned: Math.round(earned),
-      otPay: Math.round(otPay),
-      gross: Math.round(pay2?.gross || 0),
-      pf: Math.round(pay2?.pf || 0),
-      esic: Math.round(pay2?.esic || 0),
-      pt: Math.round(pay2?.pt || 0),
-      inHand: Math.round(pay2?.inHand || 0),
+      perDay: round2(m("PER_DAY")),
+      perHour: round2(m("PER_HOUR")),
+      earned: Math.round(m("EARNED")),
+      otPay: Math.round(m("OT_PAY")),
+      gross: Math.round(m("GROSS")),
+      pf: Math.round(m("PF")),
+      esic: Math.round(m("ESIC")),
+      pt: Math.round(m("PT")),
+      inHand: Math.round(m("IN_HAND")),
+      monthErrors: month.errors,
       days
+    };
+    // Pay Formulas: HR's own components on top (none = no change). They see
+    // the month pay as shown in the table (rounded).
+    const custom = applyComponents(components, {
+      ...settingVariables(payrollSettings()),
+      ...inputs,
+      PER_DAY: row.perDay,
+      PER_HOUR: row.perHour,
+      EARNED: row.earned,
+      GROSS: row.gross,
+      PF: row.pf,
+      ESIC: row.esic,
+      PT: row.pt,
+      IN_HAND: row.inHand,
+      OT_PAY: row.otPay
     });
+    row.custom = custom.values;
+    row.customErrors = custom.errors;
+    row.customEarnings = Math.round(custom.earnings);
+    row.customDeductions = Math.round(custom.deductions);
+    row.netPay = row.inHand + row.customEarnings - row.customDeductions; // OT added on the page when ticked
+    result.push(row);
   }
 
   result.sort((a, b) => String(a.employeeId).localeCompare(String(b.employeeId), undefined, { numeric: true }));
-  return { daysInMonth, rows: result };
+  return { daysInMonth, rows: result, components };
 }

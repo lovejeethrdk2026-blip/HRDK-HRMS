@@ -165,15 +165,16 @@ function buildDayRecords(punches, nameOf, gateDown = new Set()) {
   for (const group of groups.values()) {
     group.times.sort((a, b) => a.time - b.time);
 
-    // Drop taps that follow the previous kept punch at the same machine too
-    // closely (double taps). ENTRY then EXIT a minute apart are both kept.
+    // Drop double taps: a punch at the same machine as the previous kept
+    // punch, too soon after it. Only when nothing else came in between:
+    // EXIT 13:59, ENTRY 14:00, EXIT 14:01 is out, in, out again (all kept),
+    // while EXIT 13:59, EXIT 14:00 is one tap twice. ENTRY then EXIT a
+    // minute apart are always both kept.
     const kept = [];
-    const lastAt = new Map(); // device -> time of its last kept punch
     for (const punch of group.times) {
-      const previous = lastAt.get(punch.device);
-      if (previous && punch.time - previous < DUPLICATE_WINDOW_MS) continue;
+      const previous = kept[kept.length - 1];
+      if (previous && previous.device === punch.device && punch.time - previous.time < DUPLICATE_WINDOW_MS) continue;
       kept.push(punch);
-      lastAt.set(punch.device, punch.time);
     }
 
     const doc = { ID: group.ID, NAME: group.NAME, Date: group.Date, sortDate: group.sortDate };

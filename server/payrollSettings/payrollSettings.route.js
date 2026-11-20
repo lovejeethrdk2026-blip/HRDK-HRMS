@@ -1,7 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import { isLoggedIn, authorize } from "../middleware/auth.js";
-import { DEFAULT_PAYROLL_SETTINGS, payrollSettings, setPayrollSettings } from "../utils/salaryFormulas.js";
+import { DEFAULT_PAYROLL_SETTINGS, payrollSettings, setPayrollSettings, checkComponents, checkStage } from "../utils/salaryFormulas.js";
 
 // Payroll Settings (HR / admin only): PF, ESIC, PT switches and rates, basic
 // and HRA %, bonus, minimum wages. One document; the salary formulas
@@ -91,12 +91,45 @@ router.put("/", authorize("admin"), async (req, res, next) => {
   try {
     const { values, error } = clean(req.body);
     if (error) return res.status(400).json({ message: error });
+    // Kept: saved on the Pay Formulas page.
+    values.formulas = payrollSettings().formulas;
+    values.splitFormulas = payrollSettings().splitFormulas;
+    values.monthFormulas = payrollSettings().monthFormulas;
     await PayrollSettings.updateOne(
       { key: "main" },
       { $set: { values, updatedBy: req.session.userId } },
       { upsert: true }
     );
     setPayrollSettings(values);
+    res.json({ values: payrollSettings() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/payroll-settings/formulas { formulas, splitFormulas, monthFormulas }
+// -> { values }. Admin (HR) only. Pay Formulas page: HR's own pay components
+// and the built-in salary split / month pay lists, each checked
+// (utils/payFormula.js) before anything is saved. A list left out is kept.
+router.put("/formulas", authorize("admin"), async (req, res, next) => {
+  try {
+    const set = {};
+    if (req.body?.formulas !== undefined) {
+      const { components, error } = checkComponents(req.body.formulas);
+      if (error) return res.status(400).json({ message: error });
+      set["values.formulas"] = components;
+    }
+    for (const [stage, key] of [["split", "splitFormulas"], ["month", "monthFormulas"]]) {
+      if (req.body?.[key] === undefined) continue;
+      const { list, error } = checkStage(stage, req.body[key]);
+      if (error) return res.status(400).json({ message: error });
+      set[`values.${key}`] = list;
+    }
+    if (!Object.keys(set).length) return res.status(400).json({ message: "Nothing to save" });
+    await PayrollSettings.updateOne({ key: "main" }, { $set: { ...set, updatedBy: req.session.userId } }, { upsert: true });
+    const next = { ...payrollSettings() };
+    for (const [path, value] of Object.entries(set)) next[path.slice("values.".length)] = value;
+    setPayrollSettings(next);
     res.json({ values: payrollSettings() });
   } catch (err) {
     next(err);

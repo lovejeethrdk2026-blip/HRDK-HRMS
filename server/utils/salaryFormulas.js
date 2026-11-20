@@ -8,6 +8,8 @@
 // In hand = that gross less employee PF, ESIC and Professional Tax.
 // All amounts are monthly rupees; state names are matched ignoring case.
 
+import { FORMULA_STAGES, checkStage, runFormulas, setFormulaHelpers, settingVariables } from "./payFormula.js";
+
 // ---- Payroll settings (Payroll Settings page, HR only) -----------------------
 // The numbers the formulas use. Defaults are the HR sheet's; the server loads
 // the saved ones from MongoDB (server/payrollSettings) and the admin app loads
@@ -25,6 +27,14 @@ export const DEFAULT_PAYROLL_SETTINGS = {
   esicEmployerRate: 3.25,
   esicCeiling: 0, // monthly gross above this: no ESIC; 0 = no limit
   ptEnabled: true, // deduct Professional Tax (state slabs)
+  // HR's own pay components (Payroll > Pay Formulas, utils/payFormula.js):
+  // [{ code, name, type, formula, active }], worked out in this order.
+  formulas: [],
+  // The salary split and the month pay as formula lists (Pay Formulas page,
+  // "Built-in formulas"): [{ code, name, formula }]. The standard lists give
+  // the pay the HR sheet's rules give.
+  splitFormulas: FORMULA_STAGES.split.defaults,
+  monthFormulas: FORMULA_STAGES.month.defaults,
   basicPercent: 50, // basic = this % of CTC (never below the state's minimum wage)
   hraPercent: 50, // HRA at most this % of basic
   statutoryBonus: 1400, // monthly
@@ -72,7 +82,42 @@ export function setPayrollSettings(next) {
   settings = { ...DEFAULT_PAYROLL_SETTINGS, ...(next || {}) };
   settings.minWages = { ...(next?.minWages || DEFAULT_PAYROLL_SETTINGS.minWages) };
   settings.ptSlabs = structuredClone(next?.ptSlabs || DEFAULT_PAYROLL_SETTINGS.ptSlabs);
+  settings.formulas = Array.isArray(next?.formulas) ? next.formulas.map((c) => ({ ...c })) : [];
+  settings.splitFormulas = stageList("split", next?.splitFormulas);
+  settings.monthFormulas = stageList("month", next?.monthFormulas);
 }
+
+// A saved built-in list when it still checks out, else the standard one.
+function stageList(stage, list) {
+  if (Array.isArray(list) && list.length) {
+    const checked = checkStage(stage, list);
+    if (checked.list) return checked.list;
+    console.error(`Saved ${stage} formulas not usable (${checked.error}); using the standard ones`);
+  }
+  return FORMULA_STAGES[stage].defaults.map((row) => ({ ...row }));
+}
+
+// MINWAGE(STATE) and PTSLAB(GROSS, STATE, MONTH) in formulas.
+setFormulaHelpers({
+  minWage: (state) => Number(settings.minWages?.[stateKey(state)]) || 0,
+  professionalTax: (gross, state, month) => professionalTax(gross, state, month)
+});
+
+export {
+  PAY_VARIABLES,
+  PAY_FUNCTIONS,
+  SETTING_VARIABLES,
+  FORMULA_STAGES,
+  COMPONENT_TYPES,
+  checkComponents,
+  checkStage,
+  evaluateFormula,
+  applyComponents,
+  runFormulas,
+  sampleVariables,
+  settingVariables,
+  describeFormula
+} from "./payFormula.js";
 
 export const payrollSettings = () => settings;
 
@@ -182,34 +227,40 @@ export function salaryStructure({ monthlyCtc, state, pfApplicable, esicApplicabl
   return split.result;
 }
 
+// One run of the salary split formulas (settings.splitFormulas).
 function splitFor(ctc, state, pf, esic, month) {
-  const basic = basicSalary(ctc, state, pf, esic);
-  const bonus = statutoryBonus(ctc);
-  const employerEsic = esicEmployer(basic, esic);
-  const splitPf = pfForSplit(basic, bonus, pf);
-  const hra = hraAllowance({ ctc, basic, bonus, employerEsic, splitPf, state, esic });
-  const special = specialAllowance({ ctc, basic, hra, bonus, employerEsic, splitPf, pf });
-  const pfAmount = pfContribution(basic, bonus, special, pf);
-  const pfEmployer = pfAt(settings.pfEmployerRate, basic, bonus, special, pf);
-  const employeeEsic = esicEmployee(basic, esic);
-  const gross = basic + hra + bonus + special;
-  const pt = professionalTax(gross, state, month);
-
+  const vars = {
+    ...settingVariables(settings),
+    CTC: ctc,
+    STATE: String(state ?? ""),
+    MONTH: Number(month) || 0,
+    PF_APPLICABLE: pf ? 1 : 0,
+    ESIC_APPLICABLE: esic ? 1 : 0
+  };
+  const { values } = runFormulas(settings.splitFormulas, vars);
+  const v = (code) => Number(values[code]) || 0;
   return {
-    gross,
+    gross: v("GROSS"),
     result: {
-      basic: paise(basic),
-      hra: paise(hra),
-      specialAllowance: paise(special),
-      statutoryBonus: bonus,
-      esicEmployee: paise(employeeEsic),
-      esicEmployer: paise(employerEsic),
-      pfEmployee: pfAmount,
-      pfEmployer,
-      professionalTax: pt,
-      inHand: paise(inHandSalary({ basic, hra, bonus, special, pf: pfAmount, esic: employeeEsic, pt }))
+      basic: paise(v("BASIC")),
+      hra: paise(v("HRA")),
+      specialAllowance: paise(v("SPECIAL")),
+      statutoryBonus: v("BONUS"),
+      esicEmployee: paise(v("ESIC_EMPLOYEE")),
+      esicEmployer: paise(v("ESIC_EMPLOYER")),
+      pfEmployee: v("PF_EMPLOYEE"),
+      pfEmployer: v("PF_EMPLOYER"),
+      professionalTax: v("PT"),
+      inHand: paise(v("IN_HAND"))
     }
   };
+}
+
+// Month pay (Month Shift Pay) from settings.monthFormulas. vars: the month's
+// figures (PAY_VARIABLES names); the Payroll Settings numbers are added here.
+// Returns { values: { PER_DAY, EARNED, GROSS, PF, ..., IN_HAND }, errors }.
+export function monthPay(vars) {
+  return runFormulas(settings.monthFormulas, { ...settingVariables(settings), ...vars });
 }
 
 // State history: where the employee worked and when, oldest first, as

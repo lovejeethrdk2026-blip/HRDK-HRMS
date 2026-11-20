@@ -9,12 +9,13 @@ import { CITIES_BY_STATE, STATES } from "../data/places";
 import { isActive } from "../utils/employeeStatus";
 import { inMyDepartments } from "../utils/userScope";
 
-// Employees > State change: tick employees, pick the new state (and city) and
-// one effective date, and move them all at once. Each move is an ordinary
+// Employees > State change: pick the new state (and city) and one effective
+// date, tick employees, and move them all at once. Each move is an ordinary
 // state Transfer on the employee: PT and the minimum wage follow the new state
 // from that date (shows in their State changes and Full history). The list
 // shows each one's PT and in-hand now and after the move.
-// Server: POST /api/employees/bulk-state-transfer. Same look as Bulk increment.
+// Server: POST /api/employees/bulk-state-transfer. Same look as Assign shift
+// (sh-* styles in theme.css): step 1 where to, step 2 who, action bar below.
 
 const toAppDate = (iso) => (iso ? iso.split("-").reverse().join("-") : "");
 const firstOfNextMonth = () => {
@@ -23,7 +24,8 @@ const firstOfNextMonth = () => {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-01`;
 };
 const subNames = (dept) => (dept?.subDepartments || []).map((s) => (typeof s === "string" ? s : s.name));
-const sameState = (a, b) => String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
+const norm = (s) => String(s ?? "").trim().toLowerCase();
+const sameState = (a, b) => norm(a) === norm(b);
 
 export default function BulkStateChange() {
   const { user, can } = useAuth();
@@ -59,29 +61,39 @@ export default function BulkStateChange() {
   }, []);
 
   const ownOnly = user.role !== "admin" && user.employeeScope === "department";
+  const active = useMemo(
+    () => (employees || []).filter((e) => isActive(e)).filter((e) => !ownOnly || inMyDepartments(user, e)),
+    [employees, ownOnly, user]
+  );
+
+  // Where people work now, most first: "Now in" chips.
+  const statesNow = useMemo(() => {
+    const counts = new Map();
+    for (const e of active) {
+      const name = e.state || "";
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [active]);
+
   const shown = useMemo(() => {
     const q = filter.search.trim().toLowerCase();
-    return (employees || [])
-      .filter((e) => isActive(e))
-      .filter((e) => !ownOnly || inMyDepartments(user, e))
+    return active
+      .filter((e) => !filter.state || sameState(e.state, filter.state === "-" ? "" : filter.state))
       .filter((e) => !filter.department || e.department === filter.department)
       .filter((e) => !filter.subDepartment || e.subDepartment === filter.subDepartment)
-      .filter((e) => !filter.state || sameState(e.state, filter.state))
       .filter((e) => !q || e.name.toLowerCase().includes(q) || String(e.employeeId).toLowerCase().includes(q))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [employees, filter, ownOnly, user]);
+  }, [active, filter]);
 
-// Sub departments for the filter: the picked department's, or with "All
-// departments" every sub department there is (one name may sit in several).
   const filterSubs = filter.department
     ? subNames(departments.find((d) => d.name === filter.department))
     : [...new Set(departments.flatMap(subNames))].sort((a, b) => a.localeCompare(b));
 
-  // States the employees work in now, for the filter.
-  const statesNow = [...new Set((employees || []).map((e) => e.state).filter(Boolean))].sort();
-
-  const chosen = (employees || []).filter((e) => picked.has(e.employeeId));
+  const chosen = active.filter((e) => picked.has(e.employeeId));
   const alreadyThere = target.state ? chosen.filter((e) => sameState(e.state, target.state)).length : 0;
+  const toMove = Math.max(picked.size - alreadyThere, 0);
+  const where = [target.city, target.state].filter(Boolean).join(", ");
 
   // PT and in-hand in the new state (the split worked out again, same CTC).
   const after = (e) => salaryStructure({ ...e, state: target.state });
@@ -107,7 +119,6 @@ export default function BulkStateChange() {
     if (!target.state) return setError("Pick the new state");
     if (!date) return setError("Pick the effective date");
     setError("");
-    const where = [target.city, target.state].filter(Boolean).join(", ");
     const sure = await confirm({
       title: `Move ${picked.size} employee${picked.size === 1 ? "" : "s"} to ${where}?`,
       message: `From ${toAppDate(date)}. PT and the minimum wage follow ${target.state} from then. Each one is saved as a state Transfer${
@@ -139,11 +150,21 @@ export default function BulkStateChange() {
   const cols = seeSalary ? 6 : 5;
 
   return (
-    <div className="bi-page">
-      <div className="page-header">
+    <div className={`sh-page ${picked.size ? "has-bar" : ""}`}>
+      <div className="page-header sh-head">
         <div>
           <h1 className="page-title">State change</h1>
-          <p className="page-subtitle">Pick the new state in the bar on top, tick employees below, and move them all at once.</p>
+          <p className="page-subtitle">Pick the new state, tick employees, and move them all at once from one date.</p>
+        </div>
+        <div className="sh-stats">
+          <div>
+            <strong>{active.length}</strong>
+            <span>Active</span>
+          </div>
+          <div>
+            <strong>{statesNow.filter(([name]) => name).length}</strong>
+            <span>States</span>
+          </div>
         </div>
       </div>
 
@@ -162,257 +183,240 @@ export default function BulkStateChange() {
         </div>
       )}
 
-      <div className="bi-layout">
-        {/* ---------- top: where to (sticks under the navbar) ---------- */}
-        <aside className="card bi-panel">
-          <h2 className="bi-panel-title">Move to</h2>
-          <div className="bi-panel-fields">
-            <div className="bi-field bd-wide">
-              <label htmlFor="bs-state">New state</label>
-              <select
-                id="bs-state"
-                className="bi-input"
-                value={target.state}
-                onChange={(e) => setTarget({ state: e.target.value, city: "" })}
-              >
-                <option value="">Select…</option>
-                {STATES.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="bi-field bd-mid">
-              <label htmlFor="bs-city">City</label>
-              <select
-                id="bs-city"
-                className="bi-input"
-                value={target.city}
-                disabled={!target.state}
-                onChange={(e) => setTarget((t) => ({ ...t, city: e.target.value }))}
-              >
-                <option value="">{target.state ? "Select…" : "Pick a state first"}</option>
-                {(CITIES_BY_STATE[target.state] || []).map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="bi-field">
-              <label htmlFor="bi-date">Effective from</label>
-              <input id="bi-date" className="bi-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            </div>
-            <div className="bi-field bi-remark">
-              <label htmlFor="bs-remark">Remark</label>
-              <input
-                id="bs-remark"
-                className="bi-input"
-                value={remark}
-                placeholder="e.g. New Bengaluru unit"
-                onChange={(e) => setRemark(e.target.value)}
-              />
-            </div>
+      <section className="card sh-step">
+        <h2 className="sh-step-title">
+          <span className="sh-step-no">1</span> Move to
+        </h2>
+        <div className="mv-fields">
+          <div className="sh-field">
+            <label htmlFor="bs-state">New state</label>
+            <select
+              id="bs-state"
+              className="bi-input"
+              value={target.state}
+              onChange={(e) => setTarget({ state: e.target.value, city: "" })}
+            >
+              <option value="">Select…</option>
+              {STATES.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
           </div>
-          <div className="bi-panel-foot">
-            <dl className="bi-totals">
-              <div>
-                <dt>Employees</dt>
-                <dd>{picked.size}</dd>
-              </div>
-              <div>
-                <dt>Already there</dt>
-                <dd>{alreadyThere}</dd>
-              </div>
-              <div className="bi-total-diff">
-                <dt>To move</dt>
-                <dd className="bi-up">{Math.max(picked.size - alreadyThere, 0)}</dd>
-              </div>
-            </dl>
+          <div className="sh-field">
+            <label htmlFor="bs-city">City</label>
+            <select
+              id="bs-city"
+              className="bi-input"
+              value={target.city}
+              disabled={!target.state}
+              onChange={(e) => setTarget((t) => ({ ...t, city: e.target.value }))}
+            >
+              <option value="">{target.state ? "Select…" : "Pick a state first"}</option>
+              {(CITIES_BY_STATE[target.state] || []).map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="sh-field">
+            <label htmlFor="bs-date">Effective from</label>
+            <input id="bs-date" className="bi-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
+          <div className="sh-field mv-wide">
+            <label htmlFor="bs-remark">Remark</label>
+            <input
+              id="bs-remark"
+              className="bi-input"
+              value={remark}
+              placeholder="e.g. New Bengaluru unit"
+              onChange={(e) => setRemark(e.target.value)}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="card sh-step sh-list">
+        <h2 className="sh-step-title">
+          <span className="sh-step-no">2</span> Employees
+        </h2>
+        {statesNow.length > 0 && (
+          <div className="sh-chips mv-now" aria-label="State now">
+            <span className="sh-chips-label">Now in</span>
             <button
               type="button"
-              className="btn btn-primary bi-apply"
-              disabled={saving || !picked.size || !target.state}
-              onClick={apply}
+              className={`sh-chip ${!filter.state ? "is-on" : ""}`}
+              onClick={() => setFilter((f) => ({ ...f, state: "" }))}
             >
-              {saving
-                ? "Saving…"
-                : !picked.size
-                  ? "Tick employees to start"
-                  : !target.state
-                    ? "Pick the new state"
-                    : `Move ${picked.size} to ${target.state}`}
+              All <span className="sh-chip-count">{active.length}</span>
             </button>
-          </div>
-        </aside>
-
-        {/* ---------- below: who ---------- */}
-        <section className="card bi-list">
-          <div className="bi-list-head">
-            <div className="bi-field">
-              <label htmlFor="bs-f-state">State now</label>
-              <select
-                id="bs-f-state"
-                className="bi-input"
-                value={filter.state}
-                onChange={(e) => setFilter((f) => ({ ...f, state: e.target.value }))}
+            {statesNow.map(([name, count]) => (
+              <button
+                key={name || "-"}
+                type="button"
+                className={`sh-chip ${filter.state === (name || "-") ? "is-on" : ""}`}
+                onClick={() => setFilter((f) => ({ ...f, state: name || "-" }))}
               >
-                <option value="">All states</option>
-                {statesNow.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="bi-field">
-              <label htmlFor="bs-f-dept">Department</label>
-              <select
-                id="bs-f-dept"
-                className="bi-input"
-                value={filter.department}
-                onChange={(e) => setFilter((f) => ({ ...f, department: e.target.value, subDepartment: "" }))}
-              >
-                <option value="">All departments</option>
-                {departments.map((d) => (
-                  <option key={d.name} value={d.name}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="bi-field">
-              <label htmlFor="bs-f-sub">Sub department</label>
-              <select
-                id="bs-f-sub"
-                className="bi-input"
-                value={filter.subDepartment}
-                disabled={!filterSubs.length}
-                onChange={(e) => setFilter((f) => ({ ...f, subDepartment: e.target.value }))}
-              >
-                <option value="">All</option>
-                {filterSubs.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="bi-field bi-grow">
-              <label htmlFor="bs-search">Search</label>
-              <input
-                id="bs-search"
-                className="bi-input"
-                placeholder="Name or code"
-                value={filter.search}
-                onChange={(e) => setFilter((f) => ({ ...f, search: e.target.value }))}
-              />
-            </div>
-          </div>
-
-          <div className="bi-list-bar">
-            <span>
-              {shown.length} employee{shown.length === 1 ? "" : "s"} shown
-              {picked.size > 0 && (
-                <>
-                  {" · "}
-                  <strong>{picked.size} ticked</strong>
-                </>
-              )}
-            </span>
-            {picked.size > 0 && (
-              <button type="button" className="bi-link" onClick={() => setPicked(new Set())}>
-                Clear selection
+                {name || "No state"} <span className="sh-chip-count">{count}</span>
               </button>
-            )}
+            ))}
           </div>
+        )}
+        <div className="sh-filters">
+          <select
+            className="bi-input"
+            aria-label="Department"
+            value={filter.department}
+            onChange={(e) => setFilter((f) => ({ ...f, department: e.target.value, subDepartment: "" }))}
+          >
+            <option value="">All departments</option>
+            {departments.map((d) => (
+              <option key={d.name} value={d.name}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="bi-input"
+            aria-label="Sub department"
+            value={filter.subDepartment}
+            disabled={!filterSubs.length}
+            onChange={(e) => setFilter((f) => ({ ...f, subDepartment: e.target.value }))}
+          >
+            <option value="">All sub departments</option>
+            {filterSubs.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <input
+            className="bi-input sh-search"
+            type="search"
+            aria-label="Search"
+            placeholder="Search name or code"
+            value={filter.search}
+            onChange={(e) => setFilter((f) => ({ ...f, search: e.target.value }))}
+          />
+        </div>
 
-          {!employees && !error && <Loader text="Loading employees…" />}
-          {employees && (
-            <div className="table-scroll bi-scroll">
-              <table className="people-table bi-table">
-                <thead>
+        <div className="sh-count">
+          {shown.length} employee{shown.length === 1 ? "" : "s"}
+          {picked.size > 0 && <strong> · {picked.size} ticked</strong>}
+        </div>
+
+        {!employees && !error && <Loader text="Loading employees…" />}
+        {employees && (
+          <div className="table-scroll sh-scroll">
+            <table className="sh-table">
+              <thead>
+                <tr>
+                  <th className="sh-col-check">
+                    <input
+                      type="checkbox"
+                      aria-label="Tick every employee shown"
+                      checked={allShownPicked}
+                      onChange={toggleAll}
+                      disabled={!shown.length}
+                    />
+                  </th>
+                  <th className="sh-col-id">ID</th>
+                  <th>Employee</th>
+                  <th>State now</th>
+                  <th>After the move</th>
+                  {seeSalary && <th className="mv-num">PT / In hand</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {shown.length === 0 && (
                   <tr>
-                    <th className="bi-check">
-                      <input
-                        type="checkbox"
-                        aria-label="Tick every employee shown"
-                        checked={allShownPicked}
-                        onChange={toggleAll}
-                        disabled={!shown.length}
-                      />
-                    </th>
-                    <th>ID</th>
-                    <th>Employee</th>
-                    <th>State now</th>
-                    <th>After the move</th>
-                    {seeSalary && <th className="st-num">PT / In hand</th>}
+                    <td colSpan={cols} className="sh-empty">
+                      {active.length === 0 ? "No active employees yet." : "No employees match these filters."}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {shown.length === 0 && (
-                    <tr>
-                      <td colSpan={cols} className="bi-empty">
-                        {employees.length === 0
-                          ? "No employees yet. Add them on Employees > Add Employee, then they show here."
-                          : "No active employees match these filters."}
+                )}
+                {shown.map((e) => {
+                  const on = picked.has(e.employeeId);
+                  const same = target.state && sameState(e.state, target.state);
+                  const moving = on && target.state && !same;
+                  const next = moving && seeSalary && e.monthlyCtc ? after(e) : null;
+                  const stay = (e.stateHistory || []).at(-1);
+                  return (
+                    <tr key={e.employeeId} className={on ? "is-on" : undefined} onClick={() => toggle(e.employeeId)}>
+                      <td className="sh-col-check" onClick={(ev) => ev.stopPropagation()}>
+                        <input type="checkbox" aria-label={`Tick ${e.name}`} checked={on} onChange={() => toggle(e.employeeId)} />
                       </td>
-                    </tr>
-                  )}
-                  {shown.map((e) => {
-                    const on = picked.has(e.employeeId);
-                    const same = target.state && sameState(e.state, target.state);
-                    const moving = on && target.state && !same;
-                    const next = moving && seeSalary && e.monthlyCtc ? after(e) : null;
-                    const stay = (e.stateHistory || []).at(-1);
-                    return (
-                      <tr key={e.employeeId} className={on ? "bi-on" : undefined} onClick={() => toggle(e.employeeId)}>
-                        <td className="bi-check" onClick={(ev) => ev.stopPropagation()}>
-                          <input type="checkbox" aria-label={`Tick ${e.name}`} checked={on} onChange={() => toggle(e.employeeId)} />
-                        </td>
-                        <td className="bi-id">{e.employeeId}</td>
-                        <td>
-                          <span className="bi-name">{e.name}</span>
-                          <span className="bi-sub">{[e.department, e.subDepartment].filter(Boolean).join(" · ") || " "}</span>
-                        </td>
-                        <td>
-                          <span className="bi-dept">{e.state || "—"}</span>
-                          {stay?.city && <span className="bi-sub">{stay.city}</span>}
-                        </td>
-                        <td>
-                          {!on || !target.state ? (
-                            <span className="bi-sub">—</span>
-                          ) : same ? (
-                            <span className="bi-sub">Already there (skipped)</span>
-                          ) : (
-                            <>
-                              <span className="bi-name bi-up">{target.state}</span>
-                              {target.city && <span className="bi-sub">{target.city}</span>}
-                            </>
-                          )}
-                        </td>
-                        {seeSalary && (
-                          <td className="st-num">
-                            <span className="bi-dept">
-                              PT {rupees(e.salary?.professionalTax ?? 0)}
-                              {next && ` → ${rupees(next.professionalTax)}`}
-                            </span>
-                            <span className="bi-sub">
-                              In hand {rupees(e.salary?.inHand ?? 0)}
-                              {next && ` → ${rupees(next.inHand)}`}
-                            </span>
-                          </td>
+                      <td className="sh-col-id">{e.employeeId}</td>
+                      <td>
+                        <span className="sh-name">{e.name}</span>
+                        <span className="sh-sub">{[e.department, e.subDepartment].filter(Boolean).join(" · ")}</span>
+                      </td>
+                      <td>
+                        <span className="sh-dept">{e.state || "—"}</span>
+                        {stay?.city && <span className="sh-sub">{stay.city}</span>}
+                      </td>
+                      <td>
+                        {!on || !target.state ? (
+                          <span className="sh-none">—</span>
+                        ) : same ? (
+                          <span className="sh-none">Already there (skipped)</span>
+                        ) : (
+                          <>
+                            <span className="sh-name mv-to">{target.state}</span>
+                            {target.city && <span className="sh-sub">{target.city}</span>}
+                          </>
                         )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                      </td>
+                      {seeSalary && (
+                        <td className="mv-num">
+                          <span className="sh-dept">
+                            PT {rupees(e.salary?.professionalTax ?? 0)}
+                            {next && <span className="mv-to"> → {rupees(next.professionalTax)}</span>}
+                          </span>
+                          <span className="sh-sub">
+                            In hand {rupees(e.salary?.inHand ?? 0)}
+                            {next && ` → ${rupees(next.inHand)}`}
+                          </span>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {picked.size > 0 && (
+        <div className="sh-bar" role="region" aria-label="Selected employees">
+          <div className="sh-bar-inner">
+            <div className="sh-bar-count">
+              <strong>{picked.size}</strong> ticked
+              {alreadyThere > 0 && <span className="sh-sub"> · {alreadyThere} already there</span>}
+              <button type="button" className="bi-link" onClick={() => setPicked(new Set())}>
+                Clear
+              </button>
             </div>
-          )}
-        </section>
-      </div>
+            <div className="sh-bar-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={saving || !target.state || !toMove}
+                onClick={apply}
+              >
+                {saving
+                  ? "Saving…"
+                  : !target.state
+                    ? "Pick the new state first"
+                    : `Move ${toMove} to ${target.state}${date ? ` from ${toAppDate(date)}` : ""}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

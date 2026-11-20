@@ -8,6 +8,7 @@ import {
   bulkReviseSalary,
   bulkTransferDepartment,
   bulkTransferState,
+  bulkAssignShift,
   transferDepartment,
   transferEmployee,
   undoExit,
@@ -53,6 +54,8 @@ router.post("/bulk-salary-revision", isLoggedIn, allowed("employees.transfer"), 
 router.post("/bulk-department-transfer", isLoggedIn, allowed("employees.transfer"), bulkTransferDepartment);
 // Employees > State change: move many employees to one state at once.
 router.post("/bulk-state-transfer", isLoggedIn, allowed("employees.transfer"), bulkTransferState);
+// Employees > Shift: give many employees one shift (in / out) at once.
+router.post("/bulk-shift", isLoggedIn, allowed("employees.add"), bulkAssignShift);
 // Exit button on an Employees card: they left (record kept, histories closed).
 router.post("/:employeeId/exit", exitEmployee);
 // Rejoin button on a left employee's card: same code, histories open again.

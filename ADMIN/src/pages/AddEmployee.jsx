@@ -228,16 +228,8 @@ const SECTIONS = [
         upper: true
       }
     ]
-  },
-  {
-    id: "shift",
-    title: "Employee shift",
-    note: "Usual in and out time.",
-    fields: [
-      { label: "In", path: "shift.in", type: "time" },
-      { label: "Out", path: "shift.out", type: "time" }
-    ]
   }
+  // Shift is not on this form: it is given on Employees > Shift (BulkShift.jsx).
 ];
 
 const FIELDS = SECTIONS.flatMap((section) => section.fields);
@@ -248,7 +240,7 @@ const SHOWN_COUNT = SECTIONS.reduce((sum, section) => sum + visibleFields(sectio
 
 // Wizard order: Address second, then the rest of the SECTIONS with Family after
 // Personal information, then Documents.
-const STEPS = ["employee", "address", "pay", "personal", "family", "emergency", "nominee", "bank", "shift", "documents"];
+const STEPS = ["employee", "address", "pay", "personal", "family", "emergency", "nominee", "bank", "documents"];
 
 function emptyDraft() {
   return Object.fromEntries(FIELDS.map((field) => [field.path, field.initial ?? ""]));

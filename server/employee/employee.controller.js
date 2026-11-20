@@ -14,6 +14,7 @@ import {
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { registerScope, profileInScope } from "../dailyRegister/registerScope.js";
 import { renameInDrive } from "./employeeDocuments.js";
+import { clearShiftCache } from "../dailyRegister/employeeShifts.js";
 
 // Only the employee code and name are required (the record is keyed by the
 // code): path -> label for the "... is required" message. Every other field
@@ -629,6 +630,52 @@ async function bulkTransferState(req, res) {
   res.json({ dryRun, results });
 }
 
+// POST /api/employees/bulk-shift  (Employees > Shift)
+// Body { employeeIds: [...], in: "HH:mm", out: "HH:mm" }: gives every ticked
+// employee that shift. in and out both "" clears it. Out earlier than In is a
+// night shift (Daily Register groups those punches across midnight).
+// -> { results: [{ employeeId, name, from, ok, message }] }
+async function bulkAssignShift(req, res) {
+  const body = bodyOf(req);
+  const ids = [...new Set((Array.isArray(body.employeeIds) ? body.employeeIds : []).map((id) => String(id).trim()))].filter(
+    Boolean
+  );
+  const start = String(body.in ?? "").trim();
+  const end = String(body.out ?? "").trim();
+  const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+  if (!ids.length) return res.status(400).json({ message: "Pick at least one employee" });
+  if (ids.length > 1000) return res.status(400).json({ message: "At most 1000 employees at once" });
+  const clearing = !start && !end;
+  if (!clearing) {
+    if (!TIME.test(start)) return res.status(400).json({ message: "Shift in must be a time like 09:30" });
+    if (!TIME.test(end)) return res.status(400).json({ message: "Shift out must be a time like 18:30" });
+    if (start === end) return res.status(400).json({ message: "Shift in and out cannot be the same time" });
+  }
+
+  let employees = await EmployeeProfile.find({ employeeId: { $in: ids } }, { employeeId: 1, name: 1, shift: 1, department: 1, subDepartment: 1, initialsNo: 1 }).lean();
+  // A user limited to some Daily Register departments may change only those.
+  const scope = await registerScope(req);
+  if (scope) {
+    const scopeIds = new Set(scope.ids);
+    employees = employees.filter((employee) => profileInScope(scope, scopeIds, employee));
+  }
+  const byId = new Map(employees.map((employee) => [employee.employeeId, employee]));
+
+  const results = ids.map((employeeId) => {
+    const employee = byId.get(employeeId);
+    if (!employee) return { employeeId, name: "", from: "", ok: false, message: "Not found" };
+    const was = employee.shift?.in && employee.shift?.out ? `${employee.shift.in}-${employee.shift.out}` : "";
+    return { employeeId, name: employee.name, from: was, ok: true, message: "" };
+  });
+  const okIds = results.filter((row) => row.ok).map((row) => row.employeeId);
+  if (okIds.length) {
+    await EmployeeProfile.updateMany({ employeeId: { $in: okIds } }, { $set: { shift: { in: start, out: end } } });
+    clearShiftCache(); // the Daily Register sees the new shifts at once
+  }
+  res.json({ results });
+}
+
 // POST /api/employees/:employeeId/department-transfer  Body { department,
 // subDepartment, designation, reportingManager, monthlyCtc, effectiveDate
 // ("DD-MM-YYYY"), remark }. Ends the current department spell the day before
@@ -955,6 +1002,7 @@ const reviseSalaryHandler = asyncHandler(reviseSalary);
 const bulkReviseSalaryHandler = asyncHandler(bulkReviseSalary);
 const bulkTransferDepartmentHandler = asyncHandler(bulkTransferDepartment);
 const bulkTransferStateHandler = asyncHandler(bulkTransferState);
+const bulkAssignShiftHandler = asyncHandler(bulkAssignShift);
 const exitEmployeeHandler = asyncHandler(exitEmployee);
 const rejoinEmployeeHandler = asyncHandler(rejoinEmployee);
 const undoExitHandler = asyncHandler(undoExit);
@@ -970,6 +1018,7 @@ export {
   bulkReviseSalaryHandler as bulkReviseSalary,
   bulkTransferDepartmentHandler as bulkTransferDepartment,
   bulkTransferStateHandler as bulkTransferState,
+  bulkAssignShiftHandler as bulkAssignShift,
   updateEmployeeHandler as updateEmployee,
   listEmployeesHandler as listEmployees
 };

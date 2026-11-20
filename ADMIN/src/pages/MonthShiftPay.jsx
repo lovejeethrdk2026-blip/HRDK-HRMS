@@ -59,22 +59,41 @@ const COLUMNS = [
   ["pt", "PT", (r) => num(r.pt)],
   ["inHand", "In hand", (r) => money.format(r.inHand)],
   ["otPay", "OT pay", (r) => money.format(r.otPay)],
-  ["total", "Total pay", (r, ot) => money.format(r.inHand + (ot ? r.otPay : 0))]
+  ["total", "Total pay", (r, ot) => money.format(r.netPay + (ot ? r.otPay : 0))]
 ];
 const NUM_KEYS = new Set(COLUMNS.slice(5).map(([key]) => key));
+
+// Pay Formulas (HR's own components) go in after "In hand": one column each.
+const TYPE_SIGN = { earning: "+", deduction: "−", employer: "employer", info: "info" };
+function columnsWith(components) {
+  if (!components.length) return COLUMNS;
+  const at = COLUMNS.findIndex(([key]) => key === "inHand") + 1;
+  const extra = components.map((c) => [
+    `f:${c.code}`,
+    `${c.name} (${TYPE_SIGN[c.type] || c.type})`,
+    (r) =>
+      r.customErrors?.[c.code] ? (
+        <span className="msp-suspect" title={r.customErrors[c.code]}>error</span>
+      ) : (
+        money2.format(r.custom?.[c.code] ?? 0)
+      )
+  ]);
+  return [...COLUMNS.slice(0, at), ...extra, ...COLUMNS.slice(at)];
+}
+const isNum = (key) => NUM_KEYS.has(key) || key.startsWith("f:");
 
 const CODE_CLASS = { P: "msp-p", HD: "msp-hd", A: "msp-a", WO: "msp-wo", PH: "msp-ph" };
 const codeClass = (code) =>
   CODE_CLASS[code] || (code?.startsWith("PH") ? "msp-ph" : code?.startsWith("WO") ? "msp-wo" : code && code !== "–" ? "msp-l" : "");
 
-async function exportToExcel(rows, month, includeOt) {
+async function exportToExcel(rows, month, includeOt, components = []) {
   const XLSX = await import("xlsx");
-  const header = COLUMNS.map(([, label]) => label);
+  const header = columnsWith(components).map(([, label]) => label);
   const body = rows.map((r) => [
     r.employeeId, r.cosecId, r.name, r.department, r.shift, r.monthlyCtc, r.daysCounted, r.present, r.halfDays, r.absent,
     r.weeklyOffs, r.woWorked, r.holidays, r.holidayWorked, r.leaveDays, r.paidDays, formatDuration(r.workedSeconds), formatDuration(r.shiftSeconds),
     formatDuration(r.overtimeSeconds), formatDuration(r.shortSeconds), r.lateDays, r.perDay, r.earned,
-    r.gross, r.pf, r.esic, r.pt, r.inHand, r.otPay, r.inHand + (includeOt ? r.otPay : 0)
+    r.gross, r.pf, r.esic, r.pt, r.inHand, ...components.map((c) => r.custom?.[c.code] ?? 0), r.otPay, r.netPay + (includeOt ? r.otPay : 0)
   ]);
   const days = rows[0]?.days || [];
   const dayHeader = ["Code", "Name", ...days.map((d) => `${d.day} ${d.dayName.slice(0, 3)}`)];
@@ -151,6 +170,12 @@ export default function MonthShiftPay() {
   const totalDeductions = rows.reduce((s, r) => s + r.pf + r.esic + r.pt, 0);
   const totalInHand = rows.reduce((s, r) => s + r.inHand, 0);
   const totalCtc = rows.reduce((s, r) => s + r.monthlyCtc, 0);
+  const totalNet = rows.reduce((s, r) => s + r.netPay, 0);
+  const totalFormulaPlus = rows.reduce((s, r) => s + r.customEarnings, 0);
+  const totalFormulaMinus = rows.reduce((s, r) => s + r.customDeductions, 0);
+  const components = result.components || [];
+  const columns = columnsWith(components);
+  const formulaErrors = rows.filter((r) => Object.keys(r.customErrors || {}).length).length;
 
   return (
     <div>
@@ -164,7 +189,7 @@ export default function MonthShiftPay() {
           <RegisterScopeNote />
         </div>
         <div className="page-header-actions">
-          <button className="btn" onClick={() => exportToExcel(rows, month, includeOt)} disabled={loading || !rows.length}>
+          <button className="btn" onClick={() => exportToExcel(rows, month, includeOt, components)} disabled={loading || !rows.length}>
             Export to Excel
           </button>
         </div>
@@ -218,10 +243,16 @@ export default function MonthShiftPay() {
             − employee PF ({pfs.pfEmployeeRate}% of basic + bonus + special
             {pfs.pfCeilingRequired ? `, max ${pfs.pfMaxAmount}` : ""}) − ESIC ({pfs.esicEmployeeRate}% of basic) − Professional Tax
             (state slab). Rates from Payroll Settings.
-            Employer PF / ESIC are part of CTC, not paid out. Total pay = in hand (+ OT pay when ticked).
+            Employer PF / ESIC are part of CTC, not paid out. Total pay = in hand + / − Pay Formulas (+ OT pay when ticked).
           </li>
           <li>OT hrs = time worked beyond the full day. OT pay = OT hrs × (per day ÷ full-day hours).</li>
           <li>Current month: counted up to yesterday.</li>
+          {components.length > 0 && (
+            <li>
+              Pay Formulas (Payroll &gt; Pay Formulas): {components.map((c) => `${c.name} = ${c.formula}`).join("; ")}. Earnings are added to and
+              deductions taken off the total pay; employer cost and info columns are shown only.
+            </li>
+          )}
         </ul>
       </details>
 
@@ -230,6 +261,13 @@ export default function MonthShiftPay() {
           <span>
             {suspect.length} shift{suspect.length > 1 ? "s look" : " looks"} too long ({suspect.slice(0, 5).map((r) => `${r.name} ${r.shift}`).join(", ")}{suspect.length > 5 ? ", …" : ""}).
             Probably AM/PM on the employee master, e.g. 07:00 should be 19:00. These employees show as absent until fixed.
+          </span>
+        </div>
+      )}
+      {!loading && formulaErrors > 0 && (
+        <div className="error-banner msp-warn">
+          <span>
+            A Pay Formula failed for {formulaErrors} employee{formulaErrors > 1 ? "s" : ""} and counted as 0. Point at "error" in the table to see why.
           </span>
         </div>
       )}
@@ -253,16 +291,19 @@ export default function MonthShiftPay() {
             <div className="card"><span>Earned CTC</span><b>₹ {money.format(totalEarned)}</b></div>
             <div className="card"><span>PF + ESIC + PT</span><b>₹ {money.format(totalDeductions)}</b></div>
             <div className="card"><span>In hand</span><b>₹ {money.format(totalInHand)}</b></div>
+            {components.length > 0 && (
+              <div className="card"><span>Formulas + / −</span><b>₹ {money.format(totalFormulaPlus)} / {money.format(totalFormulaMinus)}</b></div>
+            )}
             <div className="card"><span>OT pay</span><b>₹ {money.format(totalOt)}</b></div>
-            <div className="card"><span>Total pay</span><b>₹ {money.format(totalInHand + (includeOt ? totalOt : 0))}</b></div>
+            <div className="card"><span>Total pay</span><b>₹ {money.format(totalNet + (includeOt ? totalOt : 0))}</b></div>
           </div>
           <div className="card card-table">
             <div className="table-scroll">
               <table className="ps-table msp-table">
                 <thead>
                   <tr>
-                    {COLUMNS.map(([key, label]) => (
-                      <th key={key} className={NUM_KEYS.has(key) ? "ps-num" : undefined}>{label}</th>
+                    {columns.map(([key, label]) => (
+                      <th key={key} className={isNum(key) ? "ps-num" : undefined}>{label}</th>
                     ))}
                   </tr>
                 </thead>
@@ -270,13 +311,13 @@ export default function MonthShiftPay() {
                   {rows.map((r) => (
                     <Fragment key={r.employeeId}>
                       <tr className="msp-row" onClick={() => setOpen(open === r.employeeId ? null : r.employeeId)} title="Show day by day">
-                        {COLUMNS.map(([key, , render]) => (
-                          <td key={key} className={NUM_KEYS.has(key) ? "ps-num" : undefined}>{render(r, includeOt)}</td>
+                        {columns.map(([key, , render]) => (
+                          <td key={key} className={isNum(key) ? "ps-num" : undefined}>{render(r, includeOt)}</td>
                         ))}
                       </tr>
                       {open === r.employeeId && (
                         <tr className="msp-days-row">
-                          <td colSpan={COLUMNS.length}>
+                          <td colSpan={columns.length}>
                             <div className="msp-days">
                               {r.days.map((d) => (
                                 <div key={d.day} className={`msp-day ${codeClass(d.code)}`} title={(d.holidayName ? `${d.holidayName} (holiday)${d.worked ? ". " : ""}` : "") + (d.worked ? `Worked ${formatDuration(d.worked)} of ${formatDuration(d.fullDay)}${d.late ? `, late ${formatDuration(d.late)}` : ""}${d.overtime ? `, OT ${formatDuration(d.overtime)}` : ""}` : "")}>

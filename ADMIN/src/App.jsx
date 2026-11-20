@@ -1,32 +1,42 @@
-import { Suspense, lazy, useState } from "react";
+import { Suspense, lazy, useEffect, useState, useTransition } from "react";
 import { useAuth } from "./auth/AuthContext";
 import Loader from "./components/Loader";
 import Sidebar from "./components/Sidebar";
 import TopNav from "./components/TopNav";
 import Login from "./pages/Login";
 
-// Each page's code is fetched when it is first opened, so the first screen
-// does not wait for every page (and the Excel / PowerPoint libraries).
-const AddEmployee = lazy(() => import("./pages/AddEmployee"));
-const BulkIncrement = lazy(() => import("./pages/BulkIncrement"));
-const BulkDepartmentChange = lazy(() => import("./pages/BulkDepartmentChange"));
-const BulkStateChange = lazy(() => import("./pages/BulkStateChange"));
-const Attendance = lazy(() => import("./pages/Attendance"));
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Departments = lazy(() => import("./pages/Departments"));
-const Leave = lazy(() => import("./pages/Leave"));
-const Holidays = lazy(() => import("./pages/Holidays"));
-const PayrollSettings = lazy(() => import("./pages/PayrollSettings"));
-const AppSettings = lazy(() => import("./pages/AppSettings"));
-const Messages = lazy(() => import("./pages/Messages"));
-const EmpCost = lazy(() => import("./pages/EmpCost"));
-const MonthShiftPay = lazy(() => import("./pages/MonthShiftPay"));
-const Employees = lazy(() => import("./pages/Employees"));
-const FinancialSummary = lazy(() => import("./pages/FinancialSummary"));
-const PaySheets = lazy(() => import("./pages/PaySheets"));
-const ReportingChart = lazy(() => import("./pages/ReportingChart"));
-const Roles = lazy(() => import("./pages/Roles"));
-const Users = lazy(() => import("./pages/Users"));
+// Each page's code is fetched on its own, so the first screen does not wait
+// for every page (and the Excel / PowerPoint libraries). pageCode() keeps the
+// import so it can be fetched early: when a menu entry is hovered, and for
+// every page once the browser is idle after sign-in (see App below), so a
+// menu click rarely waits for code.
+function pageCode(load) {
+  const Component = lazy(load);
+  Component.preload = () => load().catch(() => {});
+  return Component;
+}
+const AddEmployee = pageCode(() => import("./pages/AddEmployee"));
+const BulkIncrement = pageCode(() => import("./pages/BulkIncrement"));
+const BulkDepartmentChange = pageCode(() => import("./pages/BulkDepartmentChange"));
+const BulkStateChange = pageCode(() => import("./pages/BulkStateChange"));
+const BulkShift = pageCode(() => import("./pages/BulkShift"));
+const Attendance = pageCode(() => import("./pages/Attendance"));
+const Dashboard = pageCode(() => import("./pages/Dashboard"));
+const Departments = pageCode(() => import("./pages/Departments"));
+const Leave = pageCode(() => import("./pages/Leave"));
+const Holidays = pageCode(() => import("./pages/Holidays"));
+const PayrollSettings = pageCode(() => import("./pages/PayrollSettings"));
+const PayFormulas = pageCode(() => import("./pages/PayFormulas"));
+const AppSettings = pageCode(() => import("./pages/AppSettings"));
+const Messages = pageCode(() => import("./pages/Messages"));
+const EmpCost = pageCode(() => import("./pages/EmpCost"));
+const MonthShiftPay = pageCode(() => import("./pages/MonthShiftPay"));
+const Employees = pageCode(() => import("./pages/Employees"));
+const FinancialSummary = pageCode(() => import("./pages/FinancialSummary"));
+const PaySheets = pageCode(() => import("./pages/PaySheets"));
+const ReportingChart = pageCode(() => import("./pages/ReportingChart"));
+const Roles = pageCode(() => import("./pages/Roles"));
+const Users = pageCode(() => import("./pages/Users"));
 
 const PAGES = {
   dashboard: Dashboard, // first, so it opens after login
@@ -42,6 +52,7 @@ const PAGES = {
   bulkIncrement: BulkIncrement,
   bulkDepartmentChange: BulkDepartmentChange,
   bulkStateChange: BulkStateChange,
+  bulkShift: BulkShift, // Employees > Shift: shift list + assign shift
   departments: Departments,
   reportingChart: ReportingChart,
   paySheet1: () => <PaySheets sheetKey="paySheet1" />,
@@ -49,12 +60,30 @@ const PAGES = {
   paySheet3: () => <PaySheets sheetKey="paySheet3" />,
   empCost: EmpCost,
   monthShiftPay: MonthShiftPay, // Payroll > Month Shift Register & Pay
+  payFormulas: PayFormulas, // Payroll > Pay Formulas: HR's own pay components (admin only)
   financialSummary: FinancialSummary,
   users: Users, // admin only (top-right menu)
   roles: Roles, // admin only (top-right menu)
   payrollSettings: PayrollSettings, // admin (HR) only (top-right menu)
   appSettings: AppSettings // admin (HR) only: what the employee app shows
 };
+
+// Wrappers above share another page's code.
+const CODE_OF = {
+  attendanceAll: Attendance,
+  headCount: Attendance,
+  nightShift: Attendance,
+  paySheet1: PaySheets,
+  paySheet2: PaySheets,
+  paySheet3: PaySheets
+};
+const fetched = new Set();
+function preloadPage(key) {
+  const Component = CODE_OF[key] || PAGES[key];
+  if (!Component?.preload || fetched.has(Component)) return;
+  fetched.add(Component);
+  Component.preload();
+}
 
 // The permission each page needs (Roles & Permissions page). "admin": admins only.
 const PAGE_PERMISSION = {
@@ -71,6 +100,7 @@ const PAGE_PERMISSION = {
   bulkIncrement: "employees.transfer",
   bulkDepartmentChange: "employees.transfer",
   bulkStateChange: "employees.transfer",
+  bulkShift: "employees.view", // changing shifts needs employees.add (checked on the page and server)
   departments: "departments.view",
   reportingChart: "employees.view",
   paySheet1: "paysheet.view",
@@ -78,6 +108,7 @@ const PAGE_PERMISSION = {
   paySheet3: "paysheet.view",
   empCost: "paysheet.reports",
   monthShiftPay: "paysheet.monthpay",
+  payFormulas: "admin",
   financialSummary: "paysheet.reports",
   users: "admin",
   roles: "admin",
@@ -90,6 +121,27 @@ export default function App() {
   // Back from Google's "Allow" page (?drive=...): open Users, where the Google Drive card is.
   const [page, setPage] = useState(() => (new URLSearchParams(window.location.search).has("drive") ? "users" : ""));
   const [menuOpen, setMenuOpen] = useState(false); // menu drawer on narrow screens
+  // A menu click is a transition: the old page stays on screen (with a thin
+  // bar on top) until the new one is ready, instead of a blank "Loading…".
+  const [switching, startSwitch] = useTransition();
+
+  // Once signed in and the browser is idle, fetch every page's code in the
+  // background, one at a time.
+  useEffect(() => {
+    if (!user) return undefined;
+    const keys = Object.keys(PAGES);
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 400));
+    const cancel = window.cancelIdleCallback || clearTimeout;
+    let handle;
+    let i = 0;
+    function next() {
+      if (i >= keys.length) return;
+      preloadPage(keys[i++]);
+      handle = idle(next);
+    }
+    handle = idle(next);
+    return () => cancel(handle);
+  }, [user]);
   if (checking) return <Loader text="Loading…" />;
   if (!user) return <Login />;
 
@@ -106,14 +158,22 @@ export default function App() {
   const Page = PAGES[current];
 
   function navigate(key) {
-    setPage(key);
+    preloadPage(key);
     setMenuOpen(false);
+    startSwitch(() => setPage(key));
     window.scrollTo(0, 0);
   }
 
   return (
     <div className="app-shell">
-      <TopNav page={current} onNavigate={navigate} onMenu={() => setMenuOpen(true)} canOpen={canOpen} />
+      {switching && <div className="route-progress" role="progressbar" aria-label="Opening page" />}
+      <TopNav
+        page={current}
+        onNavigate={navigate}
+        onMenu={() => setMenuOpen(true)}
+        canOpen={canOpen}
+        onPrefetch={preloadPage}
+      />
       <Sidebar
         page={current}
         onNavigate={navigate}

@@ -41,6 +41,20 @@
     },
     "experiments": {
       "typedRoutes": false
-    }
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "expo-navigation-bar": {
+        "enforceContrast": false
+      },
+      "eas": {
+        "projectId": "627712e3-85b1-4d95-bc80-ff7a614aef06"
+      }
+    },
+    "owner": "lovejeethrdk2026"
   }
 }
