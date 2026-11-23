@@ -24,6 +24,9 @@ export function AuthProvider({ children }) {
   async function loadMe() {
     try {
       const { data } = await api.get("/users/me");
+      // A static host answers unknown URLs with index.html (HTML, not a user):
+      // VITE_API_URL is missing, so the API was never reached.
+      if (!data || typeof data !== "object") throw new Error("API not reached");
       // Payroll Settings (PF / ESIC / PT rates) before any page works out a
       // salary split, so the app matches the server. Defaults if it fails.
       await loadPayrollSettings();
