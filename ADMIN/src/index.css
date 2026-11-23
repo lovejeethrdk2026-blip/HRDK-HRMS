@@ -1280,15 +1280,26 @@ tr.present-today:hover td {
     padding: 14px;
   }
 
+  /* Two fields a row, so the filters do not fill the whole first screen. */
   .filters .field-group {
-    flex: 1 1 100%;
+    flex: 1 1 calc(50% - 6px);
     min-width: 0;
+  }
+
+  /* Button groups (Active / Inactive / All, List / Cards) keep a full row. */
+  .filters .field-group:has(.segmented, [role="tablist"], [role="radiogroup"]) {
+    flex-basis: 100%;
   }
 
   .filters input,
   .filters select {
     width: 100%;
     min-width: 0;
+  }
+
+  .filters input[type="date"],
+  .filters input[type="month"] {
+    padding: 0 8px;
   }
 
   .field-hint {

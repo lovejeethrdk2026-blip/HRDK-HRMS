@@ -374,7 +374,8 @@ function UserAvatar({ user }) {
 
 export default function Users() {
   const { user: me, refreshAccess } = useAuth();
-  const [layout, setLayout] = useState("list"); // "list": one line each, "cards": the grid
+  // "list": one line each, "cards": the grid. Phones start on cards (a wide list needs sideways scrolling there).
+  const [layout, setLayout] = useState(() => (window.matchMedia?.("(max-width: 640px)").matches ? "cards" : "list"));
   const [users, setUsers] = useState(null);
   // pickers: [{ name, subs }] from the Department page, and COSEC departments with their sections
   const [departmentOptions, setDepartmentOptions] = useState([]);

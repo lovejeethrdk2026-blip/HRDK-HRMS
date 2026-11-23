@@ -543,7 +543,8 @@ export default function Employees({ onNavigate }) {
   const [departments, setDepartments] = useState([]); // the Department tab's list, for the filter
   const [filter, setFilter] = useState({ department: "", subDepartment: "" }); // "": all
   const [statusFilter, setStatusFilter] = useState("active"); // a STATUS_FILTERS key
-  const [layout, setLayout] = useState("list"); // "list": one line each, "cards": the grid
+  // "list": one line each, "cards": the grid. Phones start on cards (a wide list needs sideways scrolling there).
+  const [layout, setLayout] = useState(() => (window.matchMedia?.("(max-width: 640px)").matches ? "cards" : "list"));
   const subDepartments = (departments.find((d) => d.name === filter.department)?.subDepartments || []).map(
     (s) => s.name
   );

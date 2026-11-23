@@ -7905,6 +7905,54 @@ button.lv-stat:hover { border-color: var(--border-strong); background: var(--hov
 .pf-help-box[open] > summary { border-bottom: 1px solid var(--row-line); }
 .pf-tabs { scrollbar-width: none; } .pf-tabs::-webkit-scrollbar { display: none; }
 
+/* Pay Formulas: tablet and phone */
+@media (max-width: 1080px) {
+  .pf-vars { max-height: 60vh; }
+}
+@media (max-width: 720px) {
+  /* Tabs: 2 x 2 buttons, all visible (no hidden "Your formulas" off screen) */
+  .pf-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; border-bottom: 0; overflow: visible; }
+  .pf-tab { justify-content: space-between; margin: 0; padding: 10px 12px; min-height: 44px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--card); white-space: normal; text-align: left; }
+  .pf-tab.is-active { border-color: var(--teal); background: var(--teal-soft); }
+
+  /* Row head: number + code on one line, name under it */
+  .pf-item { gap: 8px; }
+  .pf-item-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
+  .pf-item-head .pf-name, .pf-item-head .pf-type { grid-column: 1 / -1; width: 100%; }
+  .pf-code, .pf-name, .pf-type { height: 40px; font-size: 14px; }
+
+  /* Formula: full width, grows with its text, result under it */
+  .pf-eq { display: none; }
+  .pf-formula { flex-basis: 100%; min-height: 44px; max-height: 40vh; field-sizing: content; font-size: 13px; }
+  .pf-result { padding: 6px 10px; }
+  .pf-words { font-size: 12px; }
+
+  /* Bigger tap targets for Up / Down / Remove */
+  .pf-item-foot { gap: 4px; flex-wrap: wrap; }
+  .pf-link, .prs-remove { min-height: 40px; padding: 8px 10px; }
+  .pf-stage-head .btn { align-self: stretch; }
+  .pf-templates { padding: 12px 16px 14px; }
+  .pf-help { padding: 12px 16px 14px 32px; }
+
+  /* All formulas: one card per formula instead of a wide table */
+  .pf-all .table-scroll { overflow: visible; }
+  .pf-all .pf-all-table, .pf-all .pf-all-table tbody { display: block; }
+  .pf-all .pf-all-table thead { display: none; }
+  .pf-all .pf-all-table tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; padding: 12px 16px; border-bottom: 1px solid var(--row-line); }
+  .pf-all .pf-all-table td { display: block; width: auto; min-width: 0; padding: 0; border: 0; white-space: normal; }
+  .pf-all .pf-all-table td:first-child { padding: 0; width: auto; }
+  .pf-all .pf-all-table td:nth-child(3), .pf-all .pf-all-table td.pf-math { grid-column: 1 / -1; width: auto; min-width: 0; }
+  .pf-all .pf-all-table td:nth-child(5) { grid-row: 1; grid-column: 3; padding: 0; font-weight: 650; }
+  .pf-all .pf-all-table td:nth-child(3)::before, .pf-all .pf-all-table td.pf-math::before { display: block; font-size: 10.5px; font-weight: 600; line-height: 1.6; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-faint); }
+  .pf-all .pf-all-table td:nth-child(3)::before { content: "In words"; }
+  .pf-all .pf-all-table td.pf-math::before { content: "In maths"; }
+  .pf-all .pf-all-table tr.pf-builtin-row + tr:not(.pf-builtin-row) { border-top: 2px solid var(--border-strong); }
+  .pf-all .pf-all-table tr.pf-builtin-row + tr:not(.pf-builtin-row) td { border-top: 0; }
+  .pf-total { padding: 12px 16px 14px; }
+  .pf-total code { overflow-wrap: anywhere; }
+  .pf-impact { padding: 12px; }
+}
+
 /* ---------- Employees > Assign shift / Shift list (pages/BulkShift.jsx) ---------- */
 .sh-page { display: flex; flex-direction: column; gap: 16px; }
 .sh-page.has-bar { padding-bottom: 96px; }
@@ -8161,4 +8209,22 @@ button.lv-stat:hover { border-color: var(--border-strong); background: var(--hov
   .sh-type-add { min-height: 64px; }
   .sh-form .sh-field-name, .sh-form .sh-field-name .bi-input { width: 100%; }
   .sh-bar-picker .sh-choices { grid-template-columns: 1fr 1fr; }
+}
+
+/* ---------- Phones: whole app ----------
+   Fixed minimum widths (made for desktop toolbars) give way on a phone, so
+   every field fits the screen and nothing pushes the page sideways. */
+@media (max-width: 720px) {
+  .app-main input:not([type="checkbox"]):not([type="radio"]),
+  .app-main select,
+  .app-main textarea {
+    max-width: 100%;
+  }
+  .emp-filters select,
+  .rc-search,
+  .lv-search {
+    min-width: 0;
+    width: 100%;
+  }
+  .lv-toolbar > * { flex: 1 1 100%; }
 }
