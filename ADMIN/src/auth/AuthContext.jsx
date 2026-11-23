@@ -28,8 +28,10 @@ export function AuthProvider({ children }) {
       // salary split, so the app matches the server. Defaults if it fails.
       await loadPayrollSettings();
       setUser(data);
+      return true;
     } catch {
       setUser(null);
+      return false;
     } finally {
       setChecking(false);
     }
@@ -41,7 +43,11 @@ export function AuthProvider({ children }) {
 
   async function login(username, password) {
     await api.post("/users/login", { username, password });
-    await loadMe();
+    // Password was right but the browser did not keep the session cookie
+    // (e.g. VITE_API_URL points at another site): say so instead of spinning.
+    if (!(await loadMe())) {
+      throw new Error("Logged in, but the browser did not keep the login. Check VITE_API_URL in ADMIN/.env.");
+    }
   }
 
   async function logout() {

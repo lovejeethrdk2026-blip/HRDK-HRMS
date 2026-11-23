@@ -5,7 +5,9 @@ import axios from "axios";
 export const API_URL = (import.meta.env.VITE_API_URL || "/api").replace(/\/+$/, "");
 
 const api = axios.create({
-  baseURL: API_URL
+  baseURL: API_URL,
+  // Send the login cookie when the server is another site (admin on Render).
+  withCredentials: true
 });
 
 // Short cache for lists many pages read when they open (employees,

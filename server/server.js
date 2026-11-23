@@ -36,7 +36,13 @@ const app = express();
 // The employee app's API (/api/me) uses login keys, not cookies, so any origin
 // may call it (the app's web preview runs on its own port). Everything else
 // only from the admin site.
-const adminCors = cors({ origin: process.env.CLIENT_ORIGIN || "*" });
+// CLIENT_ORIGIN may list several sites, comma-separated (e.g. local dev and the
+// Render admin site). Named sites may send the login cookie (credentials).
+const adminOrigins = (process.env.CLIENT_ORIGIN || "")
+  .split(",")
+  .map((o) => o.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+const adminCors = adminOrigins.length ? cors({ origin: adminOrigins, credentials: true }) : cors({ origin: "*" });
 const appCors = cors({ origin: true });
 app.use((req, res, next) => (req.path.startsWith("/api/me/") ? appCors : adminCors)(req, res, next));
 // gzip: a month of the Daily Register or a year of Pay Sheet is 1-2 MB of
