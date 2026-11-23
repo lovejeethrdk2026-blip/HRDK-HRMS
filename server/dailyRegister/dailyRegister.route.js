@@ -10,8 +10,12 @@ import {
   syncStatus,
   syncNow
 } from "./dailyRegister.controller.js";
+import { isLoggedIn } from "../middleware/auth.js";
 
 const router = express.Router();
+
+// HRMS sign-in needed: punches of every employee (this server is on the internet).
+router.use(isLoggedIn);
 
 // Daily Register.
 router.get("/", getAttendance);

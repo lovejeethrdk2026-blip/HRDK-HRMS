@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import api from "../api/axios";
+import api, { API_URL } from "../api/axios";
 
 // Add Employee > Documents: the employee's PDF / JPG / PNG files. Picked files
 // wait in `pending` until the form is saved (a new employee has no record to
@@ -81,7 +81,7 @@ const savedName = (code, name, title, file) => {
 };
 
 const fileUrl = (employeeId, doc, download) =>
-  `/api/employees/${encodeURIComponent(employeeId)}/documents/${doc.id}${download ? "?download=1" : ""}`;
+  `${API_URL}/employees/${encodeURIComponent(employeeId)}/documents/${doc.id}${download ? "?download=1" : ""}`;
 
 // Sends each pending file; returns { uploaded: [document], failed: ["name: why"] }.
 export async function uploadDocuments(employeeId, pending) {

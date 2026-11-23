@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api from "../api/axios";
+import api, { API_URL } from "../api/axios";
 import { useConfirm } from "./ConfirmDialog";
 
 // Users page (admin): connect Google Drive, where employee documents are saved
@@ -115,7 +115,7 @@ export default function GoogleDriveCard() {
       ) : !status.connected ? (
         <div className="drive-actions">
           <p className="kpi-sub">Not connected: new documents are saved on this PC.</p>
-          <button type="button" className="btn btn-primary" onClick={() => (window.location.href = "/api/drive/connect")}>
+          <button type="button" className="btn btn-primary" onClick={() => (window.location.href = `${API_URL}/drive/connect`)}>
             Connect Google Drive
           </button>
         </div>

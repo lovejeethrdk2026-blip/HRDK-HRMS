@@ -6,8 +6,12 @@ import {
   deleteSubDepartment,
   listDepartments
 } from "./department.controller.js";
+import { isLoggedIn } from "../middleware/auth.js";
 
 const router = express.Router();
+
+// HRMS sign-in needed (this server is on the internet).
+router.use(isLoggedIn);
 
 // Department page: departments and their sub-departments, all added there.
 router.get("/", listDepartments);

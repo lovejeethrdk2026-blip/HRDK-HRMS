@@ -32,6 +32,10 @@ const allowed = (permission) => async (req, res, next) => {
 
 const router = express.Router();
 
+// Everything here needs an HRMS sign-in: employee records hold Aadhaar, PAN,
+// bank and salary, and this server is on the internet (Render).
+router.use(isLoggedIn);
+
 // Employees page.
 router.get("/", listEmployees);
 // Employees page > Download salary sheet: pay by Daily Register days, ?month=YYYY-MM.

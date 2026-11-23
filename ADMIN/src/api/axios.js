@@ -1,7 +1,11 @@
 import axios from "axios";
 
+// Server address comes from VITE_API_URL in ADMIN/.env. Default "/api" uses the
+// Vite dev proxy (vite.config.js) or the same host the built app is served from.
+export const API_URL = (import.meta.env.VITE_API_URL || "/api").replace(/\/+$/, "");
+
 const api = axios.create({
-  baseURL: "/api"
+  baseURL: API_URL
 });
 
 // Short cache for lists many pages read when they open (employees,
