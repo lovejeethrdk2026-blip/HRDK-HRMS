@@ -140,7 +140,7 @@ export async function removeDocumentFile(employee, document) {
   else await fs.rm(fileOf(employee, document), { force: true });
 }
 
-// After the employee replaced a document from the app (portal/profile.js):
+// After the employee changed a document from the app (portal/profile.js):
 // removes the older files of that title and gives the new one the plain name
 // (10001_RISHIKA_SONI_Aadhaar_Card.pdf rather than ..._2.pdf).
 export async function replaceOlder(employee, newest) {
@@ -160,16 +160,16 @@ export async function replaceOlder(employee, newest) {
   }
 }
 
-// PUT /api/employees/:employeeId/documents-lock { title, unlocked }
-// unlocked true: the employee app may upload this document once more.
+// PUT /api/employees/:employeeId/documents-lock { title, locked }
+// locked true: the employee can no longer change this document from the app.
 async function setDocumentLock(req, res) {
   const employee = await findEmployee(req, res);
   if (!employee) return;
   const title = String(req.body?.title || "").trim();
   if (!title) return res.status(400).json({ message: "Which document?" });
-  const update = req.body?.unlocked ? { $addToSet: { appUnlockedDocs: title } } : { $pull: { appUnlockedDocs: title } };
+  const update = req.body?.locked ? { $addToSet: { appLockedDocs: title } } : { $pull: { appLockedDocs: title } };
   const saved = await EmployeeProfile.findOneAndUpdate({ _id: employee._id }, update, { new: true });
-  res.json({ appUnlockedDocs: saved.appUnlockedDocs });
+  res.json({ appLockedDocs: saved.appLockedDocs });
 }
 
 function documentOf(employee, req, res) {

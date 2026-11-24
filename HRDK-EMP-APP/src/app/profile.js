@@ -89,11 +89,13 @@ export default function Profile() {
     }
   }
 
-  // One upload per document: confirm first, as it can't be changed after.
-  async function upload(title) {
+  // Upload, or change (replace) a document already uploaded, until HR locks it.
+  async function upload(title, replacing) {
     const sure = await confirmBox(
-      `Upload ${title}?`,
-      "You can upload each document only ONCE. After that you can't change or delete it from the app; only HR can. Pick the right, clear file.",
+      replacing ? `Change ${title}?` : `Upload ${title}?`,
+      replacing
+        ? "The new file will replace the one you uploaded before. Pick the right, clear file."
+        : "You can change it later until HR locks it. Pick the right, clear file.",
       "Choose file"
     );
     if (!sure) return;
@@ -228,11 +230,11 @@ export default function Profile() {
       ))}
 
       {data.documents.map((group) => (
-        <Section key={group.heading} title={group.heading} note="PDF, JPG or PNG, up to 10 MB. Each document can be uploaded once; to change it later, ask HR.">
+        <Section key={group.heading} title={group.heading} note="PDF, JPG or PNG, up to 10 MB. You can change a document until HR locks it.">
           <Card padded={false}>
             {group.items.map((doc, i) => {
-              // Uploaded = locked, unless HR unlocked it for one new upload.
-              const done = doc.uploaded > 0 && !doc.unlocked;
+              // You may upload / change a document until HR locks it.
+              const done = doc.uploaded > 0;
               const busy = uploading === doc.title;
               return (
                 <View key={doc.title} style={[styles.docRow, i < group.items.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border }]}>
@@ -244,30 +246,30 @@ export default function Profile() {
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={[type.body, { color: c.text, fontWeight: doc.important ? "600" : "500" }]}>{doc.title}</Text>
                     <Text style={[type.small, { color: done ? c.good : doc.important ? c.bad : c.faint }]}>
-                      {done
-                        ? "Uploaded, locked"
-                        : doc.unlocked
-                          ? "Unlocked by HR: upload the new file"
+                      {doc.locked
+                        ? "Locked by HR"
+                        : done
+                          ? "Uploaded, you can still change it"
                           : doc.important
                             ? "Needed by HR"
                             : "Optional"}
                     </Text>
                   </View>
-                  {done ? (
+                  {doc.locked ? (
                     <Ionicons name="lock-closed" size={16} color={c.faint} />
                   ) : !profileEdit ? (
                     <Text style={[type.small, { color: c.faint }]}>Give to HR</Text>
                   ) : (
                     <Pressable
-                      onPress={() => upload(doc.title)}
+                      onPress={() => upload(doc.title, done)}
                       disabled={Boolean(uploading)}
                       accessibilityRole="button"
-                      accessibilityLabel={`Upload ${doc.title}`}
+                      accessibilityLabel={`${done ? "Change" : "Upload"} ${doc.title}`}
                       style={({ pressed }) => [styles.uploadBtn, { backgroundColor: c.brandSoft, opacity: uploading && !busy ? 0.4 : pressed ? 0.7 : 1 }]}
                     >
-                      <Ionicons name="cloud-upload-outline" size={16} color={c.brand} />
+                      <Ionicons name={done ? "swap-horizontal" : "cloud-upload-outline"} size={16} color={c.brand} />
                       <Text style={[type.label, { color: c.brand, fontWeight: "700" }]}>
-                        {busy ? "Uploading" : doc.unlocked ? "Upload again" : "Upload"}
+                        {busy ? "Uploading" : done ? "Change" : "Upload"}
                       </Text>
                     </Pressable>
                   )}

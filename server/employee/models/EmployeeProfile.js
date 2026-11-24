@@ -157,10 +157,10 @@ const employeeProfileSchema = new mongoose.Schema(
       at: { type: Date, default: null },
       changes: [{ _id: false, path: text, before: text, after: text }]
     },
-    // Document titles HR has unlocked for the employee app: the employee may
-    // upload that document again (the new file replaces the old one), after
-    // which it locks itself. Set on Add Employee > Documents (Unlock / Lock).
-    appUnlockedDocs: { type: [String], default: [] },
+    // Document titles HR has locked for the employee app. Until HR locks a
+    // document the employee may change it from the app as often as they like
+    // (a new file replaces the old one). Set on Add Employee > Documents.
+    appLockedDocs: { type: [String], default: [] },
     documents: [
       {
         _id: false,

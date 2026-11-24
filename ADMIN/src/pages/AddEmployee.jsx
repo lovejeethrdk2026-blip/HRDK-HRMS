@@ -787,7 +787,7 @@ export default function AddEmployee({ onNavigate, employee, onSaved, onCancel })
   const [departments, setDepartments] = useState([]);
   // Documents section: files saved on the server, and files picked that upload on save.
   const [savedDocs, setSavedDocs] = useState(() => employee?.documents || []);
-  const [appUnlocked, setAppUnlocked] = useState(() => employee?.appUnlockedDocs || []);
+  const [appLocked, setAppLocked] = useState(() => employee?.appLockedDocs || []);
   const [pendingDocs, setPendingDocs] = useState([]);
   // Family step: father, mother, spouse and children (FamilyMembers rows).
   const [family, setFamily] = useState(() => (editing ? familyFrom(employee.family) : emptyFamily()));
@@ -1164,8 +1164,8 @@ export default function AddEmployee({ onNavigate, employee, onSaved, onCancel })
               onSavedChange={setSavedDocs}
               pending={pendingDocs}
               onPendingChange={setPendingDocs}
-              appUnlocked={appUnlocked}
-              onAppUnlockedChange={setAppUnlocked}
+              appLocked={appLocked}
+              onAppLockedChange={setAppLocked}
             />
           </section>
         </div>

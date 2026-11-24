@@ -217,23 +217,22 @@ export default function EmployeeDocuments({
   onSavedChange,
   pending,
   onPendingChange,
-  appUnlocked = [],
-  onAppUnlockedChange
+  appLocked = [],
+  onAppLockedChange
 }) {
   const [problem, setProblem] = useState("");
   const [deleting, setDeleting] = useState("");
   const [locking, setLocking] = useState("");
   const confirm = useConfirm();
 
-  // Employee app: a document the employee uploaded is locked there. Unlock
-  // lets them upload it once more (the new file replaces the old one, then it
-  // locks again); Lock takes that back.
-  async function setAppLock(title, unlocked) {
+  // Employee app: the employee may change a document (a new file replaces the
+  // old one) until HR locks it here; Unlock opens it again.
+  async function setAppLock(title, locked) {
     setLocking(title);
     setProblem("");
     try {
-      const { data } = await api.put(`/employees/${encodeURIComponent(employeeId)}/documents-lock`, { title, unlocked });
-      onAppUnlockedChange?.(data.appUnlockedDocs || []);
+      const { data } = await api.put(`/employees/${encodeURIComponent(employeeId)}/documents-lock`, { title, locked });
+      onAppLockedChange?.(data.appLockedDocs || []);
     } catch (err) {
       setProblem(err.response?.data?.message || err.message);
     } finally {
@@ -278,7 +277,7 @@ export default function EmployeeDocuments({
   async function remove(doc) {
     const ok = await confirm({
       title: `Delete ${doc.title}?`,
-      message: `${doc.fileName} will be deleted (from Google Drive it goes to the bin for 30 days). To let the employee upload a new file instead, use Unlock for app: the new file replaces this one.`,
+      message: `${doc.fileName} will be deleted (from Google Drive it goes to the bin for 30 days). While the document is not locked, the employee can also change it from the app.`,
       confirmLabel: "Delete",
       danger: true
     });
@@ -378,18 +377,18 @@ export default function EmployeeDocuments({
               </div>
               {employeeId && slotSaved.length > 0 && (
                 <div className="ae-slot-lock">
-                  <span className={appUnlocked.includes(title) ? "is-open" : ""}>
-                    {appUnlocked.includes(title)
-                      ? "🔓 Unlocked in app: the employee can upload a new file once (it replaces this one)"
-                      : "🔒 Locked in employee app"}
+                  <span className={appLocked.includes(title) ? "" : "is-open"}>
+                    {appLocked.includes(title)
+                      ? "🔒 Locked by HR: the employee can't change it in the app"
+                      : "🔓 Open in app: the employee can still change this file"}
                   </span>
                   <button
                     type="button"
                     className="btn"
                     disabled={locking === title}
-                    onClick={() => setAppLock(title, !appUnlocked.includes(title))}
+                    onClick={() => setAppLock(title, !appLocked.includes(title))}
                   >
-                    {locking === title ? "Saving…" : appUnlocked.includes(title) ? "Lock" : "Unlock for app"}
+                    {locking === title ? "Saving…" : appLocked.includes(title) ? "Unlock" : "Lock"}
                   </button>
                 </div>
               )}
