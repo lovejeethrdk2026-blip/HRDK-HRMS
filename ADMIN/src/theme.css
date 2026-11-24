@@ -8378,3 +8378,16 @@ button.lv-stat:hover { border-color: var(--border-strong); background: var(--hov
   display: flex;
   gap: 6px;
 }
+.emp-docs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.emp-docs-head .emp-doc-actions {
+  flex-wrap: wrap;
+}
+.emp-doc-tile .emp-doc-actions {
+  flex-wrap: wrap;
+}

@@ -8,7 +8,7 @@ import { SalaryRevisionForm } from "../components/SalaryRevision";
 import { DepartmentChanges, PayrollHistory, SalaryChanges, StateChanges } from "../components/ChangeHistory";
 import { ExitForm, ExitPanel } from "../components/EmployeeExit";
 import DocumentViewer, { documentUrl } from "../components/DocumentViewer";
-import { DOCUMENT_GROUPS, DOCUMENT_TITLES } from "../components/EmployeeDocuments";
+import { DOCUMENT_GROUPS, DOCUMENT_TITLES, downloadDocumentsPdf } from "../components/EmployeeDocuments";
 import { exportTransfersToExcel } from "../utils/exportTransfers";
 import { exportExitsToExcel } from "../utils/exportExits";
 import { exportSalarySheet } from "../utils/exportSalarySheet";
@@ -541,24 +541,83 @@ const docSize = (bytes) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFi
 
 function EmployeeDocsBox({ employee }) {
   const [viewing, setViewing] = useState(null);
+  const [locked, setLocked] = useState(() => employee.appLockedDocs || []); // titles HR locked for the app
+  const [busy, setBusy] = useState(""); // a title, "*" (Lock all) or "pdf"
+  const [problem, setProblem] = useState("");
+  useEffect(() => setLocked(employee.appLockedDocs || []), [employee.employeeId, employee.appLockedDocs]);
   const docs = employee.documents || [];
   const slotOf = (title) => (DOCUMENT_TITLES.includes(title) ? title : "Other");
   const uploaded = docs.length;
+  const titlesWithFile = [...new Set(docs.map((d) => d.title))];
+  const allLocked = titlesWithFile.length > 0 && titlesWithFile.every((t) => locked.includes(t));
+
+  // Employee app: lock (employee can't change it any more) or open documents.
+  async function setLock(titles, lock) {
+    setBusy(Array.isArray(titles) ? "*" : titles);
+    setProblem("");
+    try {
+      const { data } = await api.put(`/employees/${encodeURIComponent(employee.employeeId)}/documents-lock`, {
+        titles: [].concat(titles),
+        locked: lock
+      });
+      setLocked(data.appLockedDocs || []);
+      employee.appLockedDocs = data.appLockedDocs || []; // keep the list's copy in step
+    } catch (err) {
+      setProblem(err.response?.data?.message || err.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  // Every image and PDF joined into one PDF, in document order.
+  async function mergePdf() {
+    setBusy("pdf");
+    setProblem("");
+    try {
+      await downloadDocumentsPdf(employee.employeeId, employee.employeeId, employee.name, docs);
+    } catch (err) {
+      setProblem(`Could not make the PDF: ${err.message}`);
+    } finally {
+      setBusy("");
+    }
+  }
 
   return (
     <section className="emp-box">
-      <h3 className="emp-box-title">Documents</h3>
+      <div className="emp-docs-head">
+        <h3 className="emp-box-title">Documents</h3>
+        {uploaded > 0 && (
+          <span className="emp-doc-actions">
+            <button type="button" className="btn" disabled={Boolean(busy)} onClick={mergePdf} title="All images and PDFs joined into one PDF">
+              {busy === "pdf" ? "Making PDF…" : `Merge all into one PDF (${uploaded})`}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={Boolean(busy)}
+              onClick={() => setLock(titlesWithFile, !allLocked)}
+              title="Employee app: lock or open every uploaded document at once"
+            >
+              {busy === "*" ? "Saving…" : allLocked ? "🔓 Unlock all" : `🔒 Lock all (${titlesWithFile.length})`}
+            </button>
+          </span>
+        )}
+      </div>
       <p className="emp-box-note">
         {uploaded ? `${uploaded} file${uploaded === 1 ? "" : "s"} uploaded.` : "No documents uploaded yet."} View opens the file large; × closes
-        it. To add or remove files use Edit details &gt; Documents.
+        it. Lock stops the employee changing it in the app. To add or remove files use Edit details &gt; Documents.
       </p>
+      {problem && (
+        <p className="ae-docs-problem" role="alert">
+          {problem}
+        </p>
+      )}
       {DOCUMENT_GROUPS.map((group) => (
         <div key={group.heading} className="emp-docs-group">
           <h4 className="emp-box-sub">{group.heading}</h4>
           <div className="emp-docs-grid">
             {group.titles.map((title) => {
               const files = docs.filter((d) => slotOf(d.title) === title);
-              const locked = (employee.appLockedDocs || []).includes(title);
               if (!files.length) {
                 return (
                   <div key={title} className="emp-doc-tile is-missing">
@@ -572,10 +631,10 @@ function EmployeeDocsBox({ employee }) {
                   <span className="emp-doc-title">
                     {title}
                     {files.length > 1 ? ` (${i + 1})` : ""}
-                    {locked ? " 🔒" : ""}
                   </span>
                   <span className="emp-doc-meta">
-                    <span className="ae-doc-badge">{docKind(doc)}</span> {docSize(doc.size)}
+                    <span className="ae-doc-badge">{docKind(doc)}</span> {docSize(doc.size)} ·{" "}
+                    {locked.includes(doc.title) ? "🔒 Locked in app" : "🔓 Open in app"}
                   </span>
                   <span className="emp-doc-actions">
                     <button type="button" className="btn" onClick={() => setViewing(doc)}>
@@ -584,6 +643,14 @@ function EmployeeDocsBox({ employee }) {
                     <a className="btn" href={documentUrl(employee.employeeId, doc, true)}>
                       Download
                     </a>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={Boolean(busy)}
+                      onClick={() => setLock(doc.title, !locked.includes(doc.title))}
+                    >
+                      {busy === doc.title ? "Saving…" : locked.includes(doc.title) ? "Unlock" : "Lock"}
+                    </button>
                   </span>
                 </div>
               ));

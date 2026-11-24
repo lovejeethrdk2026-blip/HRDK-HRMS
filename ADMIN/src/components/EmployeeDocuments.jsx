@@ -109,6 +109,18 @@ export async function uploadDocuments(employeeId, pending) {
 // the document name on top. An Excel file can't be put in a PDF: it gets a
 // page naming it, to open on its own. A file that cannot be read gets a page
 // saying so.
+// Builds that one PDF and saves it as 10001_RISHIKA_SONI_Documents.pdf. Also
+// used by the Documents box on the Employees panel (pages/Employees.jsx).
+export async function downloadDocumentsPdf(employeeId, employeeCode, employeeName, saved, pending = []) {
+  const bytes = await buildCombinedPdf(employeeId, saved, pending);
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = [employeeCode || "Code", upperWords(employeeName) || "NAME", "Documents"].join("_") + ".pdf";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
 async function buildCombinedPdf(employeeId, saved, pending) {
   const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
   const order = (title) => DOCUMENT_TITLES.indexOf(slotOf(title));
@@ -257,13 +269,7 @@ export default function EmployeeDocuments({
     setCombining(true);
     setProblem("");
     try {
-      const bytes = await buildCombinedPdf(employeeId, saved, pending);
-      const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = [employeeCode || "Code", upperWords(employeeName) || "NAME", "Documents"].join("_") + ".pdf";
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      await downloadDocumentsPdf(employeeId, employeeCode, employeeName, saved, pending);
     } catch (err) {
       setProblem(`Could not make the PDF: ${err.message}`);
     } finally {
