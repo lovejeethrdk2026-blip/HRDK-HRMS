@@ -1,7 +1,9 @@
-import { StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Alert, Linking, Platform, StyleSheet, Text, View } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { getPayslip } from "../../api/me";
-import { Card, ErrorText, LoadingCards, monthName, rupees, Screen, Section } from "../../ui/components";
+import { getPayslip, getPayslipPdfLink } from "../../api/me";
+import { API_URL, DEMO } from "../../api/client";
+import { Button, Card, ErrorText, LoadingCards, monthName, rupees, Screen, Section } from "../../ui/components";
 import { useLoad } from "../../ui/useLoad";
 import { radius, space, type, useTheme } from "../../ui/theme";
 
@@ -12,6 +14,23 @@ export default function Payslip() {
   const { month } = useLocalSearchParams();
   const { data, error, loading } = useLoad(() => getPayslip(month), [month]);
   const kept = data && data.totalEarnings ? data.net / data.totalEarnings : 1;
+  const [opening, setOpening] = useState(false);
+
+  // The server builds the PDF (BC365 slip layout); the phone's browser
+  // downloads it through a signed 10-minute link.
+  async function downloadPdf() {
+    setOpening(true);
+    try {
+      const { path } = await getPayslipPdfLink(month);
+      await Linking.openURL(`${API_URL}${path}`);
+    } catch (err) {
+      const message = err.message || String(err);
+      if (Platform.OS === "web") window.alert(`Couldn't download the payslip\n\n${message}`);
+      else Alert.alert("Couldn't download the payslip", message);
+    } finally {
+      setOpening(false);
+    }
+  }
 
   return (
     <Screen>
@@ -54,6 +73,8 @@ export default function Payslip() {
               <Total label="Total deducted" amount={data.totalDeductions} minus />
             </Card>
           </Section>
+
+          {DEMO ? null : <Button title="Download PDF payslip" icon="download-outline" onPress={downloadPdf} loading={opening} />}
 
           <Text style={[type.small, { color: c.faint, textAlign: "center" }]}>Question about this payslip? Use Chat on the Me tab.</Text>
         </>

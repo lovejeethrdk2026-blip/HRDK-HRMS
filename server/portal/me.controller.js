@@ -12,6 +12,7 @@ import { fetchPaySheet, PaySheetError } from "../paySheet/paySheet.controller.js
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { appFeatures } from "../appSettings/appSettings.route.js";
 import * as stats from "../../ADMIN/src/utils/attendanceStats.js";
+import { buildPayslipPdf } from "./payslipPdf.js";
 
 // The employee app (HRDK-EMP-APP): every route works on the logged-in
 // employee only, taken from the login key -- never from the request.
@@ -284,7 +285,13 @@ export const payslips = handle(async (req, res) => {
 export const payslip = handle(async (req, res) => {
   const month = req.params.month;
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) fail(400, "Month must be YYYY-MM");
-  const mine = await payRows(req.employeeId, month);
+  res.json(await payslipData(req.employeeId, month));
+});
+
+// One month's payslip figures from Pay Sheet 1 (BC365), for the app screen
+// and the PDF.
+async function payslipData(id, month) {
+  const mine = await payRows(id, month);
   if (!mine.length) fail(404, "No payslip for this month");
   const earnings = [
     ["Basic", "basicWages", "basicSalary"],
@@ -307,7 +314,7 @@ export const payslip = handle(async (req, res) => {
   ]
     .map(([label, key]) => ({ label, amount: sum(mine, key) }))
     .filter((row) => row.amount);
-  res.json({
+  return {
     month,
     salaryTypes: [...new Set(mine.map((row) => row.salaryType).filter(Boolean))],
     earnings,
@@ -315,7 +322,49 @@ export const payslip = handle(async (req, res) => {
     totalEarnings: sum(mine, "totalEarnings"),
     totalDeductions: sum(mine, "totalDeductions"),
     net: sum(mine, "netAmount")
-  });
+  };
+}
+
+// ---------- payslip PDF ----------
+// The app opens the PDF in the phone's browser, which can't send the login
+// key, so it first asks for a signed link that works for 10 minutes.
+
+const signOf = (payload) => {
+  const secret = process.env.SESSION_SECRET || "";
+  if (!secret) fail(500, "SESSION_SECRET is not set on the server");
+  return crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+};
+
+// GET /api/me/payslips/:month/pdf-link -> { path: "/api/me/payslip-pdf/<token>" }
+export const payslipPdfLink = handle(async (req, res) => {
+  const month = req.params.month;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) fail(400, "Month must be YYYY-MM");
+  const payload = Buffer.from(JSON.stringify({ e: req.employeeId, m: month, x: Date.now() + 10 * 60 * 1000 })).toString("base64url");
+  res.json({ path: `/api/me/payslip-pdf/${payload}.${signOf(payload)}` });
+});
+
+// GET /api/me/payslip-pdf/:token  (no login key: the signed token is the proof)
+export const payslipPdf = handle(async (req, res) => {
+  const [payload, sig] = String(req.params.token || "").split(".");
+  const expected = payload ? signOf(payload) : "";
+  const good = sig && sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+  if (!good) fail(403, "This download link is not valid. Open the payslip again in the app.");
+  let data;
+  try {
+    data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  } catch {
+    fail(403, "This download link is not valid.");
+  }
+  if (!data?.x || data.x < Date.now()) fail(410, "This download link has expired. Open the payslip again in the app.");
+  if (!(await appFeatures()).salary) fail(403, "Salary is switched off in the app. Ask HR.");
+  const slip = await payslipData(String(data.e), String(data.m));
+  const profile = await EmployeeProfile.findOne({ $or: [{ initialsNo: String(data.e) }, { employeeId: String(data.e) }] }).lean();
+  const bytes = await buildPayslipPdf(slip, profile || { employeeId: data.e });
+  const name = `${profile?.employeeId || data.e}_Payslip_${String(data.m).replace("-", "_")}.pdf`;
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${name.replace(/[^\w.-]/g, "_")}"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.end(Buffer.from(bytes));
 });
 
 // ---------- documents (list only for now) ----------

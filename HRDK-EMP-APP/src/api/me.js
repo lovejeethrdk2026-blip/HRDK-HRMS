@@ -52,5 +52,7 @@ export const applyLeave = (form) => api("/me/leave", { method: "POST", body: for
 export const cancelLeave = (id) => api(`/me/leave/${id}/cancel`, { method: "POST" });
 export const getPayslips = () => api("/me/payslips");
 export const getPayslip = (month) => api(`/me/payslips/${month}`);
+// { path: "/api/me/payslip-pdf/..." }: a 10-minute link to the slip PDF, opened in the browser.
+export const getPayslipPdfLink = (month) => api(`/me/payslips/${month}/pdf-link`);
 export const getDocuments = () => api("/me/documents");
 export const getDocumentLink = (id) => api(`/me/documents/${id}/link`);

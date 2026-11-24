@@ -9,6 +9,8 @@ import {
   login,
   logout,
   payslip,
+  payslipPdf,
+  payslipPdfLink,
   payslips,
   profile,
   requireEmployee
@@ -24,6 +26,9 @@ const router = express.Router();
 
 router.post("/auth/login", login);
 router.post("/auth/logout", logout);
+// Payslip PDF opened in the phone's browser: the signed 10-minute link from
+// /payslips/:month/pdf-link stands in for the login key.
+router.get("/payslip-pdf/:token", payslipPdf);
 
 // Each feature can be switched off by HR (Employee App settings,
 // appSettings/appSettings.route.js); a switched-off route answers 403.
@@ -41,6 +46,7 @@ router.post("/leave", requireFeature("leaveApply"), applyMyLeave);
 router.post("/leave/:id/cancel", requireFeature("leaveApply"), cancelMyLeave);
 router.get("/payslips", requireFeature("salary"), payslips);
 router.get("/payslips/:month", requireFeature("salary"), payslip);
+router.get("/payslips/:month/pdf-link", requireFeature("salary"), payslipPdfLink);
 router.get("/documents", requireFeature("documents"), documents);
 router.get("/documents/:id/link", requireFeature("documents"), documentLink);
 
