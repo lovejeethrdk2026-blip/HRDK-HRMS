@@ -8340,3 +8340,41 @@ button.lv-stat:hover { border-color: var(--border-strong); background: var(--hov
   color: #fff;
   font-size: 15px;
 }
+
+/* Employees panel > Documents (pages/Employees.jsx EmployeeDocsBox). */
+.emp-docs-group + .emp-docs-group {
+  margin-top: 12px;
+}
+.emp-docs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.emp-doc-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--row-line);
+  border-radius: 8px;
+  background: var(--card);
+}
+.emp-doc-tile.is-missing {
+  opacity: 0.6;
+  border-style: dashed;
+}
+.emp-doc-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+.emp-doc-meta {
+  font-size: 12px;
+  color: var(--muted, #667085);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.emp-doc-actions {
+  display: flex;
+  gap: 6px;
+}

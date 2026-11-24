@@ -7,6 +7,8 @@ import { DepartmentTransferForm } from "../components/DepartmentTransfer";
 import { SalaryRevisionForm } from "../components/SalaryRevision";
 import { DepartmentChanges, PayrollHistory, SalaryChanges, StateChanges } from "../components/ChangeHistory";
 import { ExitForm, ExitPanel } from "../components/EmployeeExit";
+import DocumentViewer, { documentUrl } from "../components/DocumentViewer";
+import { DOCUMENT_GROUPS, DOCUMENT_TITLES } from "../components/EmployeeDocuments";
 import { exportTransfersToExcel } from "../utils/exportTransfers";
 import { exportExitsToExcel } from "../utils/exportExits";
 import { exportSalarySheet } from "../utils/exportSalarySheet";
@@ -525,8 +527,77 @@ function EmployeeDetail({ employee, onEdit, onTransferred }) {
         </div>
         </>
         )}
+        {can("employees.add") && <EmployeeDocsBox employee={employee} />}
       </div>
     </article>
+  );
+}
+
+// Bottom of the open employee: every document slot (as on Add Employee >
+// Documents) with View (large popup, × closes) and Download, so HR need not go
+// to Edit details just to look at a paper.
+const docKind = (doc) => (doc.mimeType === "application/pdf" ? "PDF" : /^image\//.test(doc.mimeType || "") ? "IMG" : "XLS");
+const docSize = (bytes) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round((bytes || 0) / 1024))} KB`);
+
+function EmployeeDocsBox({ employee }) {
+  const [viewing, setViewing] = useState(null);
+  const docs = employee.documents || [];
+  const slotOf = (title) => (DOCUMENT_TITLES.includes(title) ? title : "Other");
+  const uploaded = docs.length;
+
+  return (
+    <section className="emp-box">
+      <h3 className="emp-box-title">Documents</h3>
+      <p className="emp-box-note">
+        {uploaded ? `${uploaded} file${uploaded === 1 ? "" : "s"} uploaded.` : "No documents uploaded yet."} View opens the file large; × closes
+        it. To add or remove files use Edit details &gt; Documents.
+      </p>
+      {DOCUMENT_GROUPS.map((group) => (
+        <div key={group.heading} className="emp-docs-group">
+          <h4 className="emp-box-sub">{group.heading}</h4>
+          <div className="emp-docs-grid">
+            {group.titles.map((title) => {
+              const files = docs.filter((d) => slotOf(d.title) === title);
+              const locked = (employee.appLockedDocs || []).includes(title);
+              if (!files.length) {
+                return (
+                  <div key={title} className="emp-doc-tile is-missing">
+                    <span className="emp-doc-title">{title}</span>
+                    <span className="emp-doc-meta">Not uploaded</span>
+                  </div>
+                );
+              }
+              return files.map((doc, i) => (
+                <div key={doc.id} className="emp-doc-tile">
+                  <span className="emp-doc-title">
+                    {title}
+                    {files.length > 1 ? ` (${i + 1})` : ""}
+                    {locked ? " 🔒" : ""}
+                  </span>
+                  <span className="emp-doc-meta">
+                    <span className="ae-doc-badge">{docKind(doc)}</span> {docSize(doc.size)}
+                  </span>
+                  <span className="emp-doc-actions">
+                    <button type="button" className="btn" onClick={() => setViewing(doc)}>
+                      View
+                    </button>
+                    <a className="btn" href={documentUrl(employee.employeeId, doc, true)}>
+                      Download
+                    </a>
+                  </span>
+                </div>
+              ));
+            })}
+          </div>
+        </div>
+      ))}
+      <DocumentViewer
+        employeeId={employee.employeeId}
+        doc={viewing}
+        label={viewing ? `${employee.name} · ${viewing.title}` : ""}
+        onClose={() => setViewing(null)}
+      />
+    </section>
   );
 }
 
