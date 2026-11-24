@@ -3,6 +3,12 @@
     "name": "HRDK",
     "slug": "hrdk-emp-app",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/627712e3-85b1-4d95-bc80-ff7a614aef06"
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",

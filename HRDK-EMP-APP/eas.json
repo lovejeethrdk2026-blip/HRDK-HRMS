@@ -7,6 +7,8 @@
       "env": { "EXPO_PUBLIC_API_URL": "http://192.168.1.32:3030", "EXPO_PUBLIC_DEMO": "0" }
     },
     "preview": {
+      "channel": "preview",
+      "environment": "preview",
       "distribution": "internal",
       "android": { "buildType": "apk" },
       "env": { "EXPO_PUBLIC_API_URL": "https://hrdk-hrms.onrender.com", "EXPO_PUBLIC_DEMO": "0" }
