@@ -425,8 +425,15 @@ export default function EmployeeDocuments({
                   accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                   onChange={(e) => addFiles(title, Array.from(e.target.files || []))}
                 />
+                {slotSaved.length > 0 && (
+                  // Opens the newest file of this document large (each file
+                  // in the list below has its own View too).
+                  <button type="button" className="btn ae-slot-btn" onClick={() => openViewer(slotSaved[slotSaved.length - 1])}>
+                    View
+                  </button>
+                )}
                 <label htmlFor={inputId} className="btn ae-slot-btn">
-                  {count ? "Add more" : "Upload"}
+                  Upload
                 </label>
               </div>
               {employeeId && slotSaved.length > 0 && (

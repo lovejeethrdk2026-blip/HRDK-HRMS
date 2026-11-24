@@ -6,6 +6,7 @@ import { correctProfile, getProfileDetails, uploadMyDocument } from "../api/me";
 import { useFeatures } from "../auth/AuthContext";
 import { Button, Card, ErrorText, Field, IconCircle, LoadingCards, Pill, Progress, Screen, Section, showDate, tap } from "../ui/components";
 import { useLoad } from "../ui/useLoad";
+import { useDocumentView } from "../ui/DocumentView";
 import { radius, space, type, useTheme } from "../ui/theme";
 
 // My profile: everything HR has on the employee, as on the Add Employee form,
@@ -43,6 +44,7 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [uploading, setUploading] = useState("");
+  const { openDocument, viewer } = useDocumentView(); // View: image full screen, PDF in the browser
 
   if (!data) {
     return (
@@ -255,6 +257,17 @@ export default function Profile() {
                             : "Optional"}
                     </Text>
                   </View>
+                  {done && doc.fileId ? (
+                    <Pressable
+                      onPress={() => openDocument({ id: doc.fileId, mimeType: doc.mimeType, name: doc.title })}
+                      accessibilityRole="button"
+                      accessibilityLabel={`View ${doc.title}`}
+                      style={({ pressed }) => [styles.uploadBtn, { backgroundColor: c.sunk, opacity: pressed ? 0.7 : 1 }]}
+                    >
+                      <Ionicons name="eye-outline" size={16} color={c.text} />
+                      <Text style={[type.label, { color: c.text, fontWeight: "700" }]}>View</Text>
+                    </Pressable>
+                  ) : null}
                   {doc.locked ? (
                     <Ionicons name="lock-closed" size={16} color={c.faint} />
                   ) : !profileEdit ? (
@@ -279,6 +292,7 @@ export default function Profile() {
           </Card>
         </Section>
       ))}
+      {viewer}
     </Screen>
   );
 }

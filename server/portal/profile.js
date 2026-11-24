@@ -155,7 +155,15 @@ function details(p) {
     items: group.titles.map((title) => {
       const files = (p.documents || []).filter((doc) => doc.title === title);
       const locked = (p.appLockedDocs || []).includes(title);
-      return { title, uploaded: files.length, locked, important: IMPORTANT_DOCS.has(title) };
+      // The newest file, for the app's View button.
+      const latest = files[files.length - 1];
+      return {
+        title,
+        uploaded: files.length,
+        locked,
+        important: IMPORTANT_DOCS.has(title),
+        ...(latest && { fileId: latest.id, mimeType: latest.mimeType || "" })
+      };
     })
   }));
   return {
