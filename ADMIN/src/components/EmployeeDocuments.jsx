@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import api, { API_URL } from "../api/axios";
+import { useConfirm } from "./ConfirmDialog";
 
 // Add Employee > Documents: the employee's PDF / JPG / PNG files. Picked files
 // wait in `pending` until the form is saved (a new employee has no record to
@@ -222,6 +223,7 @@ export default function EmployeeDocuments({
   const [problem, setProblem] = useState("");
   const [deleting, setDeleting] = useState("");
   const [locking, setLocking] = useState("");
+  const confirm = useConfirm();
 
   // Employee app: a document the employee uploaded is locked there. Unlock
   // lets them upload it once more (the new file replaces the old one, then it
@@ -274,7 +276,13 @@ export default function EmployeeDocuments({
   }
 
   async function remove(doc) {
-    if (!window.confirm(`Delete ${doc.title} (${doc.fileName})?`)) return;
+    const ok = await confirm({
+      title: `Delete ${doc.title}?`,
+      message: `${doc.fileName} will be deleted (from Google Drive it goes to the bin for 30 days). To let the employee upload a new file instead, use Unlock for app: the new file replaces this one.`,
+      confirmLabel: "Delete",
+      danger: true
+    });
+    if (!ok) return;
     setDeleting(doc.id);
     setProblem("");
     try {

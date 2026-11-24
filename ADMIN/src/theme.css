@@ -3492,6 +3492,11 @@ tbody tr:hover td.ps-sticky {
   min-width: 240px;
 }
 
+.emp-filters .emp-search input {
+  width: 220px;
+  padding: 0 12px;
+}
+
 /* Active / Inactive / All buttons. */
 .emp-status-label {
   font-size: 12px;
@@ -8255,6 +8260,7 @@ button.lv-stat:hover { border-color: var(--border-strong); background: var(--hov
     max-width: 100%;
   }
   .emp-filters select,
+  .emp-filters .emp-search input,
   .rc-search,
   .lv-search {
     min-width: 0;

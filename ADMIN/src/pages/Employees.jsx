@@ -543,6 +543,7 @@ export default function Employees({ onNavigate }) {
   const [departments, setDepartments] = useState([]); // the Department tab's list, for the filter
   const [filter, setFilter] = useState({ department: "", subDepartment: "" }); // "": all
   const [statusFilter, setStatusFilter] = useState("active"); // a STATUS_FILTERS key
+  const [search, setSearch] = useState(""); // employee code / name typed in the search box
   // "list": one line each, "cards": the grid. Phones start on cards (a wide list needs sideways scrolling there).
   const [layout, setLayout] = useState(() => (window.matchMedia?.("(max-width: 640px)").matches ? "cards" : "list"));
   const subDepartments = (departments.find((d) => d.name === filter.department)?.subDepartments || []).map(
@@ -555,10 +556,19 @@ export default function Employees({ onNavigate }) {
     (employee) => !ownOnly || inMyDepartments(user, employee)
   );
   const opened = openId && visible.find((employee) => employee.employeeId === openId);
+  // Search box: every word typed must appear in the employee code, Matrix ID
+  // or name ("366", "emp_00366", "yash singh").
+  const searchWords = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matchesSearch = (employee) => {
+    if (!searchWords.length) return true;
+    const text = [employee.employeeId, employee.initialsNo, employee.name].join(" ").toLowerCase();
+    return searchWords.every((word) => text.includes(word));
+  };
   const inDepartment = visible.filter(
     (employee) =>
       (!filter.department || employee.department === filter.department) &&
-      (!filter.subDepartment || employee.subDepartment === filter.subDepartment)
+      (!filter.subDepartment || employee.subDepartment === filter.subDepartment) &&
+      matchesSearch(employee)
   );
   // How many of the department filter's employees each status button holds.
   const statusCounts = Object.fromEntries(
@@ -683,6 +693,17 @@ export default function Employees({ onNavigate }) {
     body = (
       <>
         <div className="filters emp-filters">
+          <div className="field-group emp-search">
+            <label htmlFor="emp-search">Search</label>
+            <input
+              id="emp-search"
+              type="search"
+              placeholder="Employee ID or name"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              autoComplete="off"
+            />
+          </div>
           <div className="field-group">
             <span className="emp-status-label" id="emp-status">
               Status
@@ -756,11 +777,14 @@ export default function Employees({ onNavigate }) {
             </div>
           </div>
           <div className="filters-actions">
-            {Boolean(filter.department || filter.subDepartment) && (
+            {Boolean(filter.department || filter.subDepartment || search) && (
               <button
                 type="button"
                 className="btn btn-ghost"
-                onClick={() => setFilter({ department: "", subDepartment: "" })}
+                onClick={() => {
+                  setFilter({ department: "", subDepartment: "" });
+                  setSearch("");
+                }}
               >
                 Clear filters
               </button>
@@ -811,7 +835,8 @@ export default function Employees({ onNavigate }) {
           <div className="card">
             <p className="state-panel">
               No {statusFilter === "all" ? "" : `${statusFilter} `}employees
-              {filter.department ? ` in ${[filter.department, filter.subDepartment].filter(Boolean).join(" · ")}` : ""}.
+              {filter.department ? ` in ${[filter.department, filter.subDepartment].filter(Boolean).join(" · ")}` : ""}
+              {search.trim() ? ` matching "${search.trim()}"` : ""}.
             </p>
           </div>
         )}
