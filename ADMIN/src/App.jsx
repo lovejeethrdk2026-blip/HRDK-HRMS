@@ -16,7 +16,6 @@ function pageCode(load) {
   return Component;
 }
 const AddEmployee = pageCode(() => import("./pages/AddEmployee"));
-const AllDocuments = pageCode(() => import("./pages/AllDocuments"));
 const BulkIncrement = pageCode(() => import("./pages/BulkIncrement"));
 const BulkDepartmentChange = pageCode(() => import("./pages/BulkDepartmentChange"));
 const BulkStateChange = pageCode(() => import("./pages/BulkStateChange"));
@@ -50,7 +49,6 @@ const PAGES = {
   messages: Messages,
   employees: Employees,
   addEmployee: AddEmployee,
-  allDocuments: AllDocuments, // Employees > All Documents
   bulkIncrement: BulkIncrement,
   bulkDepartmentChange: BulkDepartmentChange,
   bulkStateChange: BulkStateChange,
@@ -99,7 +97,6 @@ const PAGE_PERMISSION = {
   messages: "chat.team", // admin (HR) always; a manager role only if HR gives it this permission
   employees: "employees.view",
   addEmployee: "employees.add",
-  allDocuments: "employees.add", // same people who see Documents on Add Employee
   bulkIncrement: "employees.transfer",
   bulkDepartmentChange: "employees.transfer",
   bulkStateChange: "employees.transfer",

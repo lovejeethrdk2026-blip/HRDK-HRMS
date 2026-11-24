@@ -68,8 +68,6 @@ export const MENU = [
         items: [
           { key: "addEmployee", label: "Add Employee" },
           { key: "employees", label: "All Employees" },
-          // Every employee's documents on one page (pages/AllDocuments.jsx).
-          { key: "allDocuments", label: "All Documents" },
           { key: "bulkIncrement", label: "Salary increment" },
           { key: "bulkDepartmentChange", label: "Department change" },
           { key: "bulkStateChange", label: "State change" },
