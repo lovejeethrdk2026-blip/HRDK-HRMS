@@ -253,15 +253,11 @@ function Fact({ label, value, strong, warn }) {
 
 // Every punch of the day, in order: ENTRY 09:02 -> EXIT 13:05 · 4:03.
 // A missing punch shows as "Missed"; today's last open pair as "Inside".
-const hm = (t) => {
-  const m = /^(\d{1,2}):(\d{2})/.exec(t || "");
-  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-};
 const spanText = (a, b) => {
-  const from = hm(a);
-  const to = hm(b);
-  if (from == null || to == null || to < from) return "";
-  return `${Math.floor((to - from) / 60)}:${pad((to - from) % 60)}`;
+  if (!a || !b) return "";
+  const from = minutesOf(a);
+  const to = minutesOf(b);
+  return to >= from ? hm(to - from) : "";
 };
 
 function PunchList({ pairs, open }) {
