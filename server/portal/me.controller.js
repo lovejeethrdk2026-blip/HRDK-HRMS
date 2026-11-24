@@ -13,6 +13,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { appFeatures } from "../appSettings/appSettings.route.js";
 import * as stats from "../../ADMIN/src/utils/attendanceStats.js";
 import { buildPayslipPdf } from "./payslipPdf.js";
+import { sendDocument } from "../employee/employeeDocuments.js";
 
 // The employee app (HRDK-EMP-APP): every route works on the logged-in
 // employee only, taken from the login key -- never from the request.
@@ -380,13 +381,43 @@ export const documents = handle(async (req, res) => {
       id: doc.id,
       name: doc.title || doc.originalName || doc.fileName,
       category: /letter/i.test(doc.title) ? "Letters" : "Documents",
+      mimeType: doc.mimeType || "",
       uploadedAt: doc.uploadedAt
     }))
   );
 });
 
-// GET /api/me/documents/:id/link -- not yet: opening files comes with the
-// proper login.
-export const documentLink = handle(async () => {
-  fail(501, "Opening documents in the app comes later. Ask HR for a copy.");
+// The logged-in employee's own document, or a 404.
+async function myDocument(employeeId, documentId) {
+  const p = await EmployeeProfile.findOne({ $or: [{ initialsNo: employeeId }, { employeeId }] });
+  const doc = p?.documents?.find((d) => d.id === documentId);
+  if (!doc) fail(404, "Document not found");
+  return { p, doc };
+}
+
+// GET /api/me/documents/:id/link -> { path: "/api/me/document-file/<token>" }
+// A signed 10-minute link: the app shows images full screen from it and opens
+// PDFs / Excel in the phone's browser.
+export const documentLink = handle(async (req, res) => {
+  await myDocument(req.employeeId, req.params.id);
+  const payload = Buffer.from(JSON.stringify({ e: req.employeeId, d: req.params.id, x: Date.now() + 10 * 60 * 1000 })).toString("base64url");
+  res.json({ path: `/api/me/document-file/${payload}.${signOf(payload)}` });
+});
+
+// GET /api/me/document-file/:token  (no login key: the signed token is the proof)
+export const documentByLink = handle(async (req, res) => {
+  const [payload, sig] = String(req.params.token || "").split(".");
+  const expected = payload ? signOf(payload) : "";
+  const good = sig && sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+  if (!good) fail(403, "This link is not valid. Open the document again in the app.");
+  let data;
+  try {
+    data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  } catch {
+    fail(403, "This link is not valid.");
+  }
+  if (!data?.x || data.x < Date.now()) fail(410, "This link has expired. Open the document again in the app.");
+  if (!(await appFeatures()).documents) fail(403, "Documents are switched off in the app. Ask HR.");
+  const { p, doc } = await myDocument(String(data.e), String(data.d));
+  await sendDocument(res, p, doc, false);
 });

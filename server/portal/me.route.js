@@ -3,6 +3,7 @@ import {
   applyMyLeave,
   attendance,
   cancelMyLeave,
+  documentByLink,
   documentLink,
   documents,
   leave,
@@ -29,6 +30,7 @@ router.post("/auth/logout", logout);
 // Payslip PDF opened in the phone's browser: the signed 10-minute link from
 // /payslips/:month/pdf-link stands in for the login key.
 router.get("/payslip-pdf/:token", payslipPdf);
+router.get("/document-file/:token", documentByLink); // same idea for the employee's documents
 
 // Each feature can be switched off by HR (Employee App settings,
 // appSettings/appSettings.route.js); a switched-off route answers 403.

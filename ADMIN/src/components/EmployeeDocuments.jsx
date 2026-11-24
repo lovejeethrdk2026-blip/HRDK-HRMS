@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import api, { API_URL } from "../api/axios";
 import { useConfirm } from "./ConfirmDialog";
 
@@ -80,6 +80,9 @@ const savedName = (code, name, title, file) => {
     : file.type === "application/pdf" ? ".pdf" : file.type === "image/png" ? ".png" : ".jpg";
   return [code || "Code", upperWords(name) || "NAME", titleWords(title) || "Document"].join("_") + ext;
 };
+
+// Images and PDFs show in the View popup; Excel only downloads.
+const viewable = (doc) => doc.mimeType === "application/pdf" || /^image\//.test(doc.mimeType || "");
 
 const fileUrl = (employeeId, doc, download) =>
   `${API_URL}/employees/${encodeURIComponent(employeeId)}/documents/${doc.id}${download ? "?download=1" : ""}`;
@@ -223,6 +226,8 @@ export default function EmployeeDocuments({
   const [problem, setProblem] = useState("");
   const [deleting, setDeleting] = useState("");
   const [locking, setLocking] = useState("");
+  const [viewer, setViewer] = useState(null); // { doc, url, error } while the View popup is open
+  const viewingId = useRef(null);
   const confirm = useConfirm();
 
   // Employee app: the employee may change a document (a new file replaces the
@@ -301,6 +306,37 @@ export default function EmployeeDocuments({
     }
   }
 
+  // View: the file opens in a popup over the page (image large, PDF in a
+  // frame); the cross, Esc or a click outside closes it. Fetched through the
+  // API (with the sign-in) as a blob, so it also works when the admin site and
+  // the API are on different hosts.
+  async function openViewer(doc) {
+    viewingId.current = doc.id;
+    setViewer({ doc, url: "", error: "" });
+    if (!viewable(doc)) return;
+    try {
+      const { data } = await api.get(`/employees/${encodeURIComponent(employeeId)}/documents/${doc.id}`, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([data], { type: doc.mimeType }));
+      if (viewingId.current !== doc.id) return URL.revokeObjectURL(url); // closed meanwhile
+      setViewer({ doc, url, error: "" });
+    } catch (err) {
+      if (viewingId.current === doc.id) {
+        setViewer({ doc, url: "", error: err.response?.status === 404 ? "File missing on server" : err.message });
+      }
+    }
+  }
+  function closeViewer() {
+    viewingId.current = null;
+    if (viewer?.url) URL.revokeObjectURL(viewer.url);
+    setViewer(null);
+  }
+  useEffect(() => {
+    if (!viewer) return undefined;
+    const onKey = (e) => e.key === "Escape" && closeViewer();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [viewer]);
+
   const docRow = (doc) => (
     <li key={doc.id} className="ae-doc">
       <span className="ae-doc-badge">{doc.mimeType === "application/pdf" ? "PDF" : "IMG"}</span>
@@ -309,9 +345,9 @@ export default function EmployeeDocuments({
           {doc.fileName} · {sizeText(doc.size)}
         </span>
       </span>
-      <a className="btn" href={fileUrl(employeeId, doc)} target="_blank" rel="noreferrer">
+      <button type="button" className="btn" onClick={() => openViewer(doc)}>
         View
-      </a>
+      </button>
       <a className="btn" href={fileUrl(employeeId, doc, true)}>
         Download
       </a>
@@ -422,6 +458,38 @@ export default function EmployeeDocuments({
       </div>
       </section>
       ))}
+      {viewer && (
+        <div className="doc-viewer" role="dialog" aria-modal="true" aria-label={viewer.doc.title} onClick={closeViewer}>
+          <div className="doc-viewer-bar" onClick={(e) => e.stopPropagation()}>
+            <span className="doc-viewer-title">
+              {viewer.doc.title} · {viewer.doc.fileName}
+            </span>
+            <a className="btn" href={fileUrl(employeeId, viewer.doc, true)}>
+              Download
+            </a>
+            <button type="button" className="doc-viewer-close" aria-label="Close" onClick={closeViewer}>
+              ×
+            </button>
+          </div>
+          <div className="doc-viewer-body">
+            {!viewable(viewer.doc) ? (
+              <p className="doc-viewer-note" onClick={(e) => e.stopPropagation()}>
+                An Excel file can't be shown here. Use Download to open it.
+              </p>
+            ) : viewer.error ? (
+              <p className="doc-viewer-note" onClick={(e) => e.stopPropagation()}>
+                Could not open: {viewer.error}
+              </p>
+            ) : !viewer.url ? (
+              <p className="doc-viewer-note">Opening…</p>
+            ) : viewer.doc.mimeType === "application/pdf" ? (
+              <iframe className="doc-viewer-pdf" src={viewer.url} title={viewer.doc.fileName} onClick={(e) => e.stopPropagation()} />
+            ) : (
+              <img className="doc-viewer-img" src={viewer.url} alt={viewer.doc.title} onClick={(e) => e.stopPropagation()} />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

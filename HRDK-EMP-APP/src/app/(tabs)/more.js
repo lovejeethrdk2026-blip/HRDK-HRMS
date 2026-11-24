@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Alert, Linking, Platform, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import * as Updates from "expo-updates";
 import { getDocumentLink, getDocuments, getProfileDetails } from "../../api/me";
@@ -75,10 +76,15 @@ export default function Me() {
   const required = details?.required || 0;
   const complete = required ? Math.max(0, (required - missing) / required) : 0;
 
+  // Images open full screen here (the cross closes them); PDFs / Excel open in
+  // the phone's browser. Both through a signed 10-minute link.
+  const [viewing, setViewing] = useState(null); // { uri, name } of the image on screen
   async function open(doc) {
     try {
-      const { url } = await getDocumentLink(doc.id);
-      await Linking.openURL(url);
+      const { path } = await getDocumentLink(doc.id);
+      const uri = `${API_URL}${path}`;
+      if (/^image\//.test(doc.mimeType || "")) setViewing({ uri, name: doc.name });
+      else await Linking.openURL(uri);
     } catch (err) {
       say("Couldn't open", err.message);
     }
@@ -193,6 +199,26 @@ export default function Me() {
         <ListRow icon="log-out-outline" label="Log out" danger onPress={logOut} last />
       </Card>
 
+      <Modal visible={Boolean(viewing)} transparent animationType="fade" onRequestClose={() => setViewing(null)}>
+        <View style={styles.viewer}>
+          <View style={styles.viewerBar}>
+            <Text style={[type.heading, { color: "#FFFFFF", flex: 1 }]} numberOfLines={1}>
+              {viewing?.name}
+            </Text>
+            <Pressable
+              onPress={() => setViewing(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+              hitSlop={12}
+              style={({ pressed }) => [styles.viewerClose, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <Ionicons name="close" size={26} color="#FFFFFF" />
+            </Pressable>
+          </View>
+          {viewing ? <Image source={{ uri: viewing.uri }} style={styles.viewerImage} resizeMode="contain" /> : null}
+        </View>
+      </Modal>
+
       <Text style={[type.small, { color: c.faint, textAlign: "center" }]}>
         HRDK Jewel Craft · v{Constants.expoConfig?.version}
         {DEMO ? " · sample data" : `\n${API_URL.replace(/^https?:\/\//, "")}`}
@@ -207,5 +233,9 @@ const styles = StyleSheet.create({
   avatar: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
   chips: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
   complete: { borderRadius: radius.inner, padding: space.md, gap: space.sm },
-  completeHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }
+  completeHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  viewer: { flex: 1, backgroundColor: "rgba(0,0,0,0.94)" },
+  viewerBar: { flexDirection: "row", alignItems: "center", gap: space.md, paddingHorizontal: space.lg, paddingTop: 48, paddingBottom: space.md },
+  viewerClose: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.16)" },
+  viewerImage: { flex: 1, width: "100%", marginBottom: space.lg }
 });

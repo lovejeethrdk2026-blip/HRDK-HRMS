@@ -191,10 +191,15 @@ async function getDocument(req, res) {
   if (!employee) return;
   const document = documentOf(employee, req, res);
   if (!document) return;
-  const disposition = req.query.download ? "attachment" : "inline";
+  await sendDocument(res, employee, document, Boolean(req.query.download));
+}
+
+// Streams one document (Drive or disk) to the browser / app; also used by the
+// employee app's own document routes (portal/me.controller.js).
+export async function sendDocument(res, employee, document, download) {
   const headers = () => {
     res.setHeader("Content-Type", document.mimeType);
-    res.setHeader("Content-Disposition", `${disposition}; filename="${document.fileName.replace(/"/g, "")}"`);
+    res.setHeader("Content-Disposition", `${download ? "attachment" : "inline"}; filename="${document.fileName.replace(/"/g, "")}"`);
     res.setHeader("X-Content-Type-Options", "nosniff");
   };
 
@@ -207,7 +212,10 @@ async function getDocument(req, res) {
   }
   headers();
   res.sendFile(fileOf(employee, document), (error) => {
-    if (error && !res.headersSent) res.status(404).json({ message: "File missing on server" });
+    if (error && !res.headersSent) {
+      res.removeHeader("Content-Disposition");
+      res.status(404).json({ message: "File missing on server" });
+    }
   });
 }
 
