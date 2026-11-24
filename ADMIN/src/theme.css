@@ -8340,3 +8340,34 @@ button.lv-stat:hover { border-color: var(--border-strong); background: var(--hov
   color: #fff;
   font-size: 15px;
 }
+
+/* Employees > All Documents (pages/AllDocuments.jsx). */
+.ad-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  align-self: flex-end;
+  min-height: 38px;
+}
+.ad-hint {
+  font-size: 13px;
+  color: var(--muted, #667085);
+  margin: 0 0 12px;
+}
+.ad-code {
+  font-size: 12px;
+  color: var(--muted, #667085);
+  margin-left: 6px;
+}
+.ad-missing {
+  color: #b54708;
+  font-weight: 600;
+  font-size: 13px;
+}
+.ad-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
