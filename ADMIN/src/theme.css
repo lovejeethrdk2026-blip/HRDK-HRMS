@@ -3204,6 +3204,11 @@ tbody tr:hover td.ps-sticky {
   margin-bottom: 4px;
 }
 
+/* Hint takes the spare room so Lock all and Download sit together on the right. */
+.ae-docs-top .ae-docs-hint {
+  flex: 1 1 auto;
+}
+
 .ae-docs-hint {
   margin: 0;
   font-size: 12.5px;

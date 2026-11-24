@@ -160,14 +160,18 @@ export async function replaceOlder(employee, newest) {
   }
 }
 
-// PUT /api/employees/:employeeId/documents-lock { title, locked }
-// locked true: the employee can no longer change this document from the app.
+// PUT /api/employees/:employeeId/documents-lock { title | titles, locked }
+// locked true: the employee can no longer change these documents from the app.
+// titles: several at once (Lock all / Unlock all).
 async function setDocumentLock(req, res) {
   const employee = await findEmployee(req, res);
   if (!employee) return;
-  const title = String(req.body?.title || "").trim();
-  if (!title) return res.status(400).json({ message: "Which document?" });
-  const update = req.body?.locked ? { $addToSet: { appLockedDocs: title } } : { $pull: { appLockedDocs: title } };
+  const list = Array.isArray(req.body?.titles) ? req.body.titles : [req.body?.title];
+  const titles = [...new Set(list.map((t) => String(t || "").trim()).filter(Boolean))];
+  if (!titles.length) return res.status(400).json({ message: "Which document?" });
+  const update = req.body?.locked
+    ? { $addToSet: { appLockedDocs: { $each: titles } } }
+    : { $pull: { appLockedDocs: { $in: titles } } };
   const saved = await EmployeeProfile.findOneAndUpdate({ _id: employee._id }, update, { new: true });
   res.json({ appLockedDocs: saved.appLockedDocs });
 }

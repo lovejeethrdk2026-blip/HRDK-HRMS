@@ -227,11 +227,15 @@ export default function EmployeeDocuments({
 
   // Employee app: the employee may change a document (a new file replaces the
   // old one) until HR locks it here; Unlock opens it again.
-  async function setAppLock(title, locked) {
-    setLocking(title);
+  // titles: one title, or an array for Lock all / Unlock all.
+  async function setAppLock(titles, locked) {
+    setLocking(Array.isArray(titles) ? "*" : titles);
     setProblem("");
     try {
-      const { data } = await api.put(`/employees/${encodeURIComponent(employeeId)}/documents-lock`, { title, locked });
+      const { data } = await api.put(`/employees/${encodeURIComponent(employeeId)}/documents-lock`, {
+        titles: [].concat(titles),
+        locked
+      });
       onAppLockedChange?.(data.appLockedDocs || []);
     } catch (err) {
       setProblem(err.response?.data?.message || err.message);
@@ -242,6 +246,9 @@ export default function EmployeeDocuments({
   const inputRefs = useRef({});
   const [combining, setCombining] = useState(false);
   const total = saved.length + pending.length;
+  // Document titles that have a file, for Lock all / Unlock all.
+  const savedTitles = [...new Set(saved.map((doc) => doc.title))];
+  const allLocked = savedTitles.length > 0 && savedTitles.every((title) => appLocked.includes(title));
 
   async function downloadAll() {
     setCombining(true);
@@ -333,6 +340,17 @@ export default function EmployeeDocuments({
     <div className="ae-docs">
       <div className="ae-docs-top">
         <p className="ae-docs-hint">PDF, JPG, PNG or Excel (.xlsx, .xls), up to 10 MB each.</p>
+        {employeeId && savedTitles.length > 0 && (
+          <button
+            type="button"
+            className="btn"
+            disabled={Boolean(locking)}
+            title="Employee app: lock or open every uploaded document at once"
+            onClick={() => setAppLock(savedTitles, !allLocked)}
+          >
+            {locking === "*" ? "Saving…" : allLocked ? "🔓 Unlock all" : `🔒 Lock all (${savedTitles.length})`}
+          </button>
+        )}
         <button type="button" className="btn" disabled={!total || combining} onClick={downloadAll}>
           {combining ? "Making PDF…" : `Download all as one PDF${total ? ` (${total})` : ""}`}
         </button>
