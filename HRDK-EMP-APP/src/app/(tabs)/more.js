@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Alert, Linking, Platform, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import Constants from "expo-constants";
@@ -30,6 +31,35 @@ function updateLine() {
   return ["Update", when, "·", Updates.updateId.slice(0, 8)].filter(Boolean).join(" ");
 }
 
+// More > Check for updates: fetch the newest update now and restart into it.
+// When nothing new arrives, show the updater's recent errors so HR can tell
+// why (no internet, a crashed update rolled back, ...).
+async function checkForUpdates(setChecking) {
+  if (!Updates.isEnabled) return say("Updates", "Updates work in the installed app only.");
+  setChecking(true);
+  try {
+    const check = await Updates.checkForUpdateAsync();
+    if (check.isAvailable) {
+      const got = await Updates.fetchUpdateAsync();
+      if (got.isNew || got.isRollBackToEmbedded) {
+        say("Update downloaded", "The app will restart now with the new version.");
+        await Updates.reloadAsync();
+        return;
+      }
+    }
+    const errors = (await Updates.readLogEntriesAsync(24 * 60 * 60 * 1000))
+      .filter((e) => e.level === "error" || e.level === "fatal")
+      .slice(-3)
+      .map((e) => `• ${e.message}`)
+      .join("\n");
+    say("No new update", `You have the latest version.\n${updateLine()}${errors ? `\n\nRecent update errors:\n${errors}` : ""}`);
+  } catch (err) {
+    say("Update failed", err.message || String(err));
+  } finally {
+    setChecking(false);
+  }
+}
+
 const say = (title, message) => (Platform.OS === "web" ? window.alert(`${title}\n\n${message}`) : Alert.alert(title, message));
 
 // Me: who I am, how complete my profile is, my work details, help, my
@@ -38,6 +68,7 @@ export default function Me() {
   const c = useTheme();
   const { employee, signOut } = useAuth();
   const f = useFeatures(); // what HR lets the app show
+  const [checking, setChecking] = useState(false);
   const { data: docs, loading, reload } = useLoad(() => (f.documents ? getDocuments() : Promise.resolve([])), [f.documents]);
   const { data: details, reload: reloadDetails } = useLoad(() => getProfileDetails().catch(() => null), []);
   const missing = details ? details.missingFields.length + details.missingDocuments.length : 0;
@@ -151,6 +182,14 @@ export default function Me() {
       ) : null}
 
       <Card padded={false}>
+        {Updates.isEnabled ? (
+          <ListRow
+            icon="cloud-download-outline"
+            label={checking ? "Checking for updates…" : "Check for updates"}
+            note={updateLine()}
+            onPress={checking ? undefined : () => checkForUpdates(setChecking)}
+          />
+        ) : null}
         <ListRow icon="log-out-outline" label="Log out" danger onPress={logOut} last />
       </Card>
 
