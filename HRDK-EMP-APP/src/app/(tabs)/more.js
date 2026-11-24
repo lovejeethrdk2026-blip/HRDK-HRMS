@@ -1,6 +1,7 @@
 import { Alert, Linking, Platform, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import Constants from "expo-constants";
+import * as Updates from "expo-updates";
 import { getDocumentLink, getDocuments, getProfileDetails } from "../../api/me";
 import { API_URL, DEMO } from "../../api/client";
 import { useAuth, useFeatures } from "../../auth/AuthContext";
@@ -17,6 +18,18 @@ const initials = (name) =>
     .join("")
     .toUpperCase();
 const titleCase = (s) => String(s || "").toLowerCase().replace(/(^|\s)\S/g, (ch) => ch.toUpperCase());
+// Which over-the-air update this phone is running, so HR can check an update
+// arrived: "Update 24 Nov 16:40 · 01a20d33" or "Update: none yet (APK code)".
+const two = (n) => String(n).padStart(2, "0");
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function updateLine() {
+  if (!Updates.isEnabled) return "";
+  if (Updates.isEmbeddedLaunch || !Updates.updateId) return "Update: none yet (APK code)";
+  const at = Updates.createdAt;
+  const when = at ? `${at.getDate()} ${MONTHS[at.getMonth()]} ${two(at.getHours())}:${two(at.getMinutes())}` : "";
+  return ["Update", when, "·", Updates.updateId.slice(0, 8)].filter(Boolean).join(" ");
+}
+
 const say = (title, message) => (Platform.OS === "web" ? window.alert(`${title}\n\n${message}`) : Alert.alert(title, message));
 
 // Me: who I am, how complete my profile is, my work details, help, my
@@ -144,6 +157,7 @@ export default function Me() {
       <Text style={[type.small, { color: c.faint, textAlign: "center" }]}>
         HRDK Jewel Craft · v{Constants.expoConfig?.version}
         {DEMO ? " · sample data" : `\n${API_URL.replace(/^https?:\/\//, "")}`}
+        {updateLine() ? `\n${updateLine()}` : ""}
       </Text>
     </Screen>
   );
