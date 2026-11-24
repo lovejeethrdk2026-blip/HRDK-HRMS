@@ -189,6 +189,7 @@ export default function Attendance() {
                         warn={Boolean(day.outside && day.outside !== "0:00")}
                       />
                     </View>
+                    <PunchList pairs={day.pairs} open={selected === todayIso} />
                     {day.late ? <Note icon="time-outline" tone="warn" text={`Late by ${day.late}`} /> : null}
                     {day.earlyOut ? <Note icon="exit-outline" tone="warn" text={`Left ${day.earlyOut} early`} /> : null}
                     {day.missed ? <Note icon="alert-circle-outline" tone="bad" text={`Missed punch: ${day.missed}. Punch ENTRY and EXIT every time.`} /> : null}
@@ -250,6 +251,45 @@ function Fact({ label, value, strong, warn }) {
   );
 }
 
+// Every punch of the day, in order: ENTRY 09:02 -> EXIT 13:05 · 4:03.
+// A missing punch shows as "Missed"; today's last open pair as "Inside".
+const hm = (t) => {
+  const m = /^(\d{1,2}):(\d{2})/.exec(t || "");
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+};
+const spanText = (a, b) => {
+  const from = hm(a);
+  const to = hm(b);
+  if (from == null || to == null || to < from) return "";
+  return `${Math.floor((to - from) / 60)}:${pad((to - from) % 60)}`;
+};
+
+function PunchList({ pairs, open }) {
+  const c = useTheme();
+  return (
+    <View style={[styles.punches, { borderColor: c.border }]}>
+      <Text style={[type.label, { color: c.muted, fontWeight: "700" }]}>
+        All punches ({pairs.reduce((n, p) => n + (p.in ? 1 : 0) + (p.out ? 1 : 0), 0)})
+      </Text>
+      {pairs.map((p, i) => {
+        const last = i === pairs.length - 1;
+        const outText = p.out || (open && last ? "Inside" : "Missed");
+        const outMissing = !p.out && !(open && last);
+        return (
+          <View key={i} style={styles.punchRow}>
+            <Text style={[type.small, { color: c.faint, width: 18 }]}>{i + 1}</Text>
+            <Ionicons name="log-in-outline" size={15} color={p.in ? c.good : c.bad} />
+            <Text style={[type.body, type.figure, { color: p.in ? c.text : c.bad, width: 64 }]}>{p.in || "Missed"}</Text>
+            <Ionicons name="log-out-outline" size={15} color={outMissing ? c.bad : c.warn} />
+            <Text style={[type.body, type.figure, { color: outMissing ? c.bad : c.text, width: 64 }]}>{outText}</Text>
+            <Text style={[type.small, type.figure, { color: c.muted, flex: 1, textAlign: "right" }]}>{spanText(p.in, p.out)}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 function Note({ icon, tone, text }) {
   const c = useTheme();
   return (
@@ -276,5 +316,7 @@ const styles = StyleSheet.create({
   legendDot: { width: 8, height: 8, borderRadius: 4 },
   facts: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
   fact: { flexBasis: "47%", flexGrow: 1, borderRadius: radius.inner, padding: space.md, gap: 2 },
-  note: { flexDirection: "row", alignItems: "center", gap: space.sm, borderRadius: radius.inner, paddingHorizontal: space.md, paddingVertical: space.sm }
+  note: { flexDirection: "row", alignItems: "center", gap: space.sm, borderRadius: radius.inner, paddingHorizontal: space.md, paddingVertical: space.sm },
+  punches: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: space.sm, gap: 6 },
+  punchRow: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 28 }
 });
