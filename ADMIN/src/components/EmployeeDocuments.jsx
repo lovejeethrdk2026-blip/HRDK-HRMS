@@ -208,9 +208,36 @@ async function buildCombinedPdf(employeeId, saved, pending) {
 // in DOCUMENT_TITLES (older uploads).
 const slotOf = (title) => (DOCUMENT_TITLES.includes(title) ? title : "Other");
 
-export default function EmployeeDocuments({ employeeId, employeeCode, employeeName, saved, onSavedChange, pending, onPendingChange }) {
+export default function EmployeeDocuments({
+  employeeId,
+  employeeCode,
+  employeeName,
+  saved,
+  onSavedChange,
+  pending,
+  onPendingChange,
+  appUnlocked = [],
+  onAppUnlockedChange
+}) {
   const [problem, setProblem] = useState("");
   const [deleting, setDeleting] = useState("");
+  const [locking, setLocking] = useState("");
+
+  // Employee app: a document the employee uploaded is locked there. Unlock
+  // lets them upload it once more (the new file replaces the old one, then it
+  // locks again); Lock takes that back.
+  async function setAppLock(title, unlocked) {
+    setLocking(title);
+    setProblem("");
+    try {
+      const { data } = await api.put(`/employees/${encodeURIComponent(employeeId)}/documents-lock`, { title, unlocked });
+      onAppUnlockedChange?.(data.appUnlockedDocs || []);
+    } catch (err) {
+      setProblem(err.response?.data?.message || err.message);
+    } finally {
+      setLocking("");
+    }
+  }
   const inputRefs = useRef({});
   const [combining, setCombining] = useState(false);
   const total = saved.length + pending.length;
@@ -341,6 +368,23 @@ export default function EmployeeDocuments({ employeeId, employeeCode, employeeNa
                   {count ? "Add more" : "Upload"}
                 </label>
               </div>
+              {employeeId && slotSaved.length > 0 && (
+                <div className="ae-slot-lock">
+                  <span className={appUnlocked.includes(title) ? "is-open" : ""}>
+                    {appUnlocked.includes(title)
+                      ? "🔓 Unlocked in app: the employee can upload a new file once (it replaces this one)"
+                      : "🔒 Locked in employee app"}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={locking === title}
+                    onClick={() => setAppLock(title, !appUnlocked.includes(title))}
+                  >
+                    {locking === title ? "Saving…" : appUnlocked.includes(title) ? "Lock" : "Unlock for app"}
+                  </button>
+                </div>
+              )}
               {count > 0 && (
                 <ul className="ae-docs-list">
                   {slotSaved.map(docRow)}

@@ -1,5 +1,5 @@
 import EmployeeProfile from "../employee/models/EmployeeProfile.js";
-import { uploadDocument } from "../employee/employeeDocuments.js";
+import { replaceOlder, storeDocument } from "../employee/employeeDocuments.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 // Employee app > My profile: the employee's own record as on the Add Employee
@@ -154,7 +154,8 @@ function details(p) {
     heading: group.heading,
     items: group.titles.map((title) => {
       const files = (p.documents || []).filter((doc) => doc.title === title);
-      return { title, uploaded: files.length, important: IMPORTANT_DOCS.has(title) };
+      const unlocked = files.length > 0 && (p.appUnlockedDocs || []).includes(title);
+      return { title, uploaded: files.length, unlocked, important: IMPORTANT_DOCS.has(title) };
     })
   }));
   return {
@@ -208,17 +209,23 @@ export const correctDetails = handle(async (req, res) => {
 
 // POST /api/me/documents?title=..&fileName=.. (raw file body): uploads one of
 // the employee's own documents, the same way Add Employee > Documents does.
-// Once only per document type: after that the employee can't replace, add to
-// or delete it from the app (there is no delete route here); only HR can,
-// on Add Employee > Documents.
+// Once only per document type: after that it is locked and the employee can't
+// replace, add to or delete it from the app (there is no delete route here).
+// HR can unlock it on Add Employee > Documents: the next upload then replaces
+// the old file (Drive bin) and the document locks again.
 export const uploadMyDocument = handle(async (req, res) => {
   const p = await profileOf(req.employeeId);
   if (!p) fail(404, "HR has not created your full profile yet. Ask HR.");
   const title = String(req.query.title || "");
   if (!ALL_TITLES.includes(title)) fail(400, "Pick a document type");
-  if ((p.documents || []).some((doc) => doc.title === title)) {
-    fail(409, `${title} is already uploaded. To change it, ask HR.`);
-  }
-  req.params.employeeId = p.employeeId;
-  await uploadDocument(req, res);
+  const hasFile = (p.documents || []).some((doc) => doc.title === title);
+  const unlocked = (p.appUnlockedDocs || []).includes(title);
+  if (hasFile && !unlocked) fail(409, `${title} is already uploaded. To change it, ask HR.`);
+
+  const { document, error } = await storeDocument(p, req);
+  if (error) fail(400, error);
+  if (hasFile) await replaceOlder(p, document);
+  p.appUnlockedDocs = (p.appUnlockedDocs || []).filter((t) => t !== title);
+  await p.save();
+  res.status(201).json(p.documents.find((doc) => doc.id === document.id));
 });

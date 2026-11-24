@@ -231,7 +231,8 @@ export default function Profile() {
         <Section key={group.heading} title={group.heading} note="PDF, JPG or PNG, up to 10 MB. Each document can be uploaded once; to change it later, ask HR.">
           <Card padded={false}>
             {group.items.map((doc, i) => {
-              const done = doc.uploaded > 0;
+              // Uploaded = locked, unless HR unlocked it for one new upload.
+              const done = doc.uploaded > 0 && !doc.unlocked;
               const busy = uploading === doc.title;
               return (
                 <View key={doc.title} style={[styles.docRow, i < group.items.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border }]}>
@@ -243,7 +244,13 @@ export default function Profile() {
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={[type.body, { color: c.text, fontWeight: doc.important ? "600" : "500" }]}>{doc.title}</Text>
                     <Text style={[type.small, { color: done ? c.good : doc.important ? c.bad : c.faint }]}>
-                      {done ? "Uploaded, locked" : doc.important ? "Needed by HR" : "Optional"}
+                      {done
+                        ? "Uploaded, locked"
+                        : doc.unlocked
+                          ? "Unlocked by HR: upload the new file"
+                          : doc.important
+                            ? "Needed by HR"
+                            : "Optional"}
                     </Text>
                   </View>
                   {done ? (
@@ -259,7 +266,9 @@ export default function Profile() {
                       style={({ pressed }) => [styles.uploadBtn, { backgroundColor: c.brandSoft, opacity: uploading && !busy ? 0.4 : pressed ? 0.7 : 1 }]}
                     >
                       <Ionicons name="cloud-upload-outline" size={16} color={c.brand} />
-                      <Text style={[type.label, { color: c.brand, fontWeight: "700" }]}>{busy ? "Uploading" : "Upload"}</Text>
+                      <Text style={[type.label, { color: c.brand, fontWeight: "700" }]}>
+                        {busy ? "Uploading" : doc.unlocked ? "Upload again" : "Upload"}
+                      </Text>
                     </Pressable>
                   )}
                 </View>

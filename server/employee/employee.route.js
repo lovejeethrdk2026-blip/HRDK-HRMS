@@ -15,7 +15,7 @@ import {
   updateEmployee
 } from "./employee.controller.js";
 import { getSalarySheet } from "./salarySheet.js";
-import { MAX_DOCUMENT_BYTES, deleteDocument, getDocument, uploadDocument } from "./employeeDocuments.js";
+import { MAX_DOCUMENT_BYTES, deleteDocument, getDocument, setDocumentLock, uploadDocument } from "./employeeDocuments.js";
 import { isLoggedIn } from "../middleware/auth.js";
 import { accessFor } from "../roles/roles.controller.js";
 
@@ -76,5 +76,7 @@ router.post(
 );
 router.get("/:employeeId/documents/:documentId", isLoggedIn, getDocument);
 router.delete("/:employeeId/documents/:documentId", isLoggedIn, deleteDocument);
+// Unlock / lock one document for the employee app (upload it again once).
+router.put("/:employeeId/documents-lock", isLoggedIn, express.json(), setDocumentLock);
 
 export default router;

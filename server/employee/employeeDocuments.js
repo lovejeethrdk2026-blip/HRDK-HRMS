@@ -85,16 +85,14 @@ async function findEmployee(req, res) {
   return employee;
 }
 
-// POST /api/employees/:employeeId/documents?title=..&fileName=..
-// Body: the file's bytes. Returns the saved document entry.
-async function uploadDocument(req, res) {
+// Checks the request's file and saves it (Drive or disk) as one of the
+// employee's documents. Does not save the employee record. Returns
+// { document } or { error } (a message for a 400 answer).
+export async function storeDocument(employee, req) {
   const buffer = Buffer.isBuffer(req.body) ? req.body : null;
-  if (!buffer || !buffer.length) return res.status(400).json({ message: "No file received" });
+  if (!buffer || !buffer.length) return { error: "No file received" };
   const kind = kindOf(buffer, req.query.fileName);
-  if (!kind) return res.status(400).json({ message: "Only PDF, JPG, PNG or Excel (.xlsx, .xls) files can be uploaded" });
-
-  const employee = await findEmployee(req, res);
-  if (!employee) return;
+  if (!kind) return { error: "Only PDF, JPG, PNG or Excel (.xlsx, .xls) files can be uploaded" };
 
   // Not cleanName: a title such as "Bank passbook / cheque" keeps its "/".
   const title = String(req.query.title || "").replace(/[^\w ./()-]/g, "").trim().slice(0, 60) || "Document";
@@ -121,8 +119,57 @@ async function uploadDocument(req, res) {
     uploadedAt: new Date()
   };
   employee.documents.push(document);
+  return { document: employee.documents[employee.documents.length - 1] };
+}
+
+// POST /api/employees/:employeeId/documents?title=..&fileName=..
+// Body: the file's bytes. Returns the saved document entry.
+async function uploadDocument(req, res) {
+  const employee = await findEmployee(req, res);
+  if (!employee) return;
+  const { document, error } = await storeDocument(employee, req);
+  if (error) return res.status(400).json({ message: error });
   await employee.save();
   res.status(201).json(document);
+}
+
+// Deletes a document's file: Drive's bin (restorable 30 days) or off the disk.
+// A file already gone is not an error. Does not touch the record.
+export async function removeDocumentFile(employee, document) {
+  if (document.driveFileId) await trashFile(document.driveFileId);
+  else await fs.rm(fileOf(employee, document), { force: true });
+}
+
+// After the employee replaced a document from the app (portal/profile.js):
+// removes the older files of that title and gives the new one the plain name
+// (10001_RISHIKA_SONI_Aadhaar_Card.pdf rather than ..._2.pdf).
+export async function replaceOlder(employee, newest) {
+  const older = employee.documents.filter((doc) => doc.title === newest.title && doc.id !== newest.id);
+  for (const doc of older) await removeDocumentFile(employee, doc);
+  const gone = new Set(older.map((doc) => doc.id));
+  employee.documents = employee.documents.filter((doc) => !gone.has(doc.id));
+  const doc = employee.documents.find((d) => d.id === newest.id);
+  const name = savedNameOf(employee, doc.title, extOf(doc), doc);
+  if (name === doc.fileName) return;
+  try {
+    if (doc.driveFileId) await renameFile(doc.driveFileId, name);
+    else await fs.rename(fileOf(employee, doc), path.join(folderOf(employee.employeeId), name));
+    doc.fileName = name;
+  } catch (error) {
+    console.error(`Rename of ${doc.fileName} failed:`, error.message); // keeps the _2 name
+  }
+}
+
+// PUT /api/employees/:employeeId/documents-lock { title, unlocked }
+// unlocked true: the employee app may upload this document once more.
+async function setDocumentLock(req, res) {
+  const employee = await findEmployee(req, res);
+  if (!employee) return;
+  const title = String(req.body?.title || "").trim();
+  if (!title) return res.status(400).json({ message: "Which document?" });
+  const update = req.body?.unlocked ? { $addToSet: { appUnlockedDocs: title } } : { $pull: { appUnlockedDocs: title } };
+  const saved = await EmployeeProfile.findOneAndUpdate({ _id: employee._id }, update, { new: true });
+  res.json({ appUnlockedDocs: saved.appUnlockedDocs });
 }
 
 function documentOf(employee, req, res) {
@@ -167,8 +214,7 @@ async function deleteDocument(req, res) {
   if (!employee) return;
   const document = documentOf(employee, req, res);
   if (!document) return;
-  if (document.driveFileId) await trashFile(document.driveFileId);
-  else await fs.rm(fileOf(employee, document), { force: true });
+  await removeDocumentFile(employee, document);
   employee.documents = employee.documents.filter((doc) => doc.id !== document.id);
   await employee.save();
   res.json({ ok: true });
@@ -241,8 +287,10 @@ export function startMoveToDrive() {
 const uploadDocumentHandler = asyncHandler(uploadDocument);
 const getDocumentHandler = asyncHandler(getDocument);
 const deleteDocumentHandler = asyncHandler(deleteDocument);
+const setDocumentLockHandler = asyncHandler(setDocumentLock);
 
 export {
+  setDocumentLockHandler as setDocumentLock,
   uploadDocumentHandler as uploadDocument,
   getDocumentHandler as getDocument,
   deleteDocumentHandler as deleteDocument

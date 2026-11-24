@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import api from "../api/axios";
 import { useConfirm } from "../components/ConfirmDialog";
 import Loader from "../components/Loader";
+import PayrollSettings from "./PayrollSettings";
 import {
   PAY_VARIABLES,
   PAY_FUNCTIONS,
@@ -65,7 +66,9 @@ const plain = (draft) => JSON.stringify(Object.fromEntries(LISTS.map((k) => [k, 
 const SPLIT_TO_VARIABLE = { BASIC: "BASIC", HRA: "HRA", SPECIAL: "SPECIAL", BONUS: "BONUS", PF_EMPLOYEE: "FULL_PF", ESIC_EMPLOYEE: "FULL_ESIC", IN_HAND: "FULL_IN_HAND" };
 const COMPUTED = new Set([...Object.values(SPLIT_TO_VARIABLE), ...FORMULA_STAGES.month.required]);
 
-const GROUPS = [...new Set(PAY_VARIABLES.map((v) => v.group))];
+// Side panel groups. Attendance is left out on purpose (HR asked): those names
+// still work in formulas and the test uses their standard sample figures.
+const GROUPS = [...new Set(PAY_VARIABLES.map((v) => v.group))].filter((g) => g !== "Attendance");
 const SHORT_NAME = Object.fromEntries([...PAY_VARIABLES, ...SETTING_VARIABLES].map((v) => [v.name, v.short]));
 const KIND = { earning: "Earning", deduction: "Deduction", employer: "Employer cost", info: "Info" };
 
@@ -108,10 +111,16 @@ export default function PayFormulas() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
-  const [sample, setSample] = useState(sampleVariables);
+  // Test figures: a full paid month (attendance can't be typed on this page), so
+  // the month's in hand matches the salary split's full-month in hand.
+  const [sample, setSample] = useState(() => {
+    const s = sampleVariables();
+    return { ...s, PAID_DAYS: s.DAYS_IN_MONTH, PRESENT: s.DAYS_IN_MONTH - s.WEEKLY_OFFS - s.HOLIDAYS, HALF_DAYS: 0, ABSENT: 0, LEAVE_DAYS: 0, OT_HOURS: 0 };
+  });
   const [filter, setFilter] = useState("");
   const [employees, setEmployees] = useState([]);
   const [tab, setTab] = useState("split"); // one list on screen at a time
+  const [, setSettingsSaved] = useState(0); // re-draw test figures after Payroll Settings saves
   const lastFormula = useRef(null); // { list, index, el } of the formula box last typed in
 
   useEffect(() => {
@@ -473,7 +482,8 @@ export default function PayFormulas() {
           ["split", "Salary split", draft.split.length, checks.split?.error],
           ["month", "Month pay", draft.month.length, checks.month?.error],
           ["formulas", "Your formulas", draft.formulas.length, checks.formulas?.error],
-          ["all", "All formulas", draft.split.length + draft.month.length + draft.formulas.length, ""]
+          ["all", "All formulas", draft.split.length + draft.month.length + draft.formulas.length, ""],
+          ["settings", "Payroll Settings", null, ""]
         ].map(([key, title, count, bad]) => (
           <button
             key={key}
@@ -484,7 +494,7 @@ export default function PayFormulas() {
             onClick={() => setTab(key)}
           >
             {title}
-            <span className="pf-tab-count">{count}</span>
+            {count != null && <span className="pf-tab-count">{count}</span>}
             {bad && <span className="pf-tab-bad" title={bad} aria-label="Has an error" />}
           </button>
         ))}
@@ -540,7 +550,9 @@ export default function PayFormulas() {
         </div>
       )}
 
-      {tab !== "all" && (
+      {tab === "settings" && <PayrollSettings embedded onSaved={() => setSettingsSaved((n) => n + 1)} />}
+
+      {tab !== "all" && tab !== "settings" && (
       <div className="prs-layout">
         <div className="prs-main">
           {tab === "split" && stageSection(
@@ -725,9 +737,9 @@ export default function PayFormulas() {
                         <button type="button" className="pf-var-name" onClick={() => insert(v.name)} title={v.label}>
                           {v.name}
                         </button>
-                        <span className="pf-var-computed" title="Change it on Payroll Settings">
+                        <button type="button" className="pf-var-computed pf-var-setting" title="Change it on the Payroll Settings tab" onClick={() => setTab("settings")}>
                           {money.format(settingsNow[v.name])}
-                        </span>
+                        </button>
                         <small>{v.label}</small>
                       </div>
                     ))}
@@ -816,7 +828,7 @@ export default function PayFormulas() {
       </section>
       )}
 
-      {changed && (
+      {changed && tab !== "settings" && (
         <div className="prs-savebar" role="region" aria-label="Unsaved changes">
           <span>{firstError ? "Fix the formula in red to save" : "You have unsaved changes"}</span>
           <button className="btn btn-ghost" onClick={() => setDraft(fromValues(Object.fromEntries([["splitFormulas", savedLists.split], ["monthFormulas", savedLists.month], ["formulas", savedLists.formulas]])))} disabled={saving}>

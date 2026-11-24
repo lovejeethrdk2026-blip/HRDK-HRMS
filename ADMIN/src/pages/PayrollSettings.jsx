@@ -91,7 +91,21 @@ function StateSelect({ id, value, onChange, counts, exclude, placeholder, label 
   );
 }
 
-export function Section({ id, title, intro, children }) {
+// collapsible: a dropdown (closed until clicked), as on the Pay Formulas page.
+export function Section({ id, title, intro, children, collapsible }) {
+  if (collapsible) {
+    return (
+      <details className="prs-section prs-drop" id={id}>
+        <summary>
+          <span>
+            <h2 id={`${id}-title`}>{title}</h2>
+            {intro && <p>{intro}</p>}
+          </span>
+        </summary>
+        <div className="prs-rows">{children}</div>
+      </details>
+    );
+  }
   return (
     <section className="prs-section" id={id} aria-labelledby={`${id}-title`}>
       <header>
@@ -103,7 +117,9 @@ export function Section({ id, title, intro, children }) {
   );
 }
 
-export default function PayrollSettings() {
+// embedded: shown inside Pay Formulas ("Payroll Settings" tab), every section
+// a dropdown. onSaved(values) runs after a save.
+export default function PayrollSettings({ embedded = false, onSaved } = {}) {
   const confirm = useConfirm();
   const [draft, setDraft] = useState(null);
   const [saved, setSaved] = useState(null);
@@ -166,6 +182,7 @@ export default function PayrollSettings() {
       setDraft(data.values);
       setSaved(data.values);
       setNotice("Saved. New salary splits use these settings from now on.");
+      onSaved?.(data.values);
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -251,21 +268,33 @@ export default function PayrollSettings() {
   const gross = preview ? preview.basic + preview.hra + preview.statutoryBonus + preview.specialAllowance : 0;
 
   return (
-    <div className={`prs ${changed ? "has-changes" : ""}`}>
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Payroll Settings</h1>
-          <p className="page-subtitle">
-            Company-wide PF, ESIC and Professional Tax rules. Add Employee, Salary revision, Month Shift Register &amp; Pay and
-            the exports all use these. Only HR (admin) can change them.
+    <div className={`prs ${changed ? "has-changes" : ""} ${embedded ? "prs-embedded" : ""}`}>
+      {embedded ? (
+        <div className="prs-embedded-head">
+          <p>
+            The numbers and switches the formulas use (PF_EMPLOYEE_RATE, BASIC_PERCENT, MINWAGE, PTSLAB …). Open a section to change it, then
+            press <b>Save settings</b>.
           </p>
-        </div>
-        <div className="page-header-actions">
           <button className="btn btn-ghost" onClick={resetDefaults} disabled={saving}>
             Standard rates
           </button>
         </div>
-      </div>
+      ) : (
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Payroll Settings</h1>
+            <p className="page-subtitle">
+              Company-wide PF, ESIC and Professional Tax rules. Add Employee, Salary revision, Month Shift Register &amp; Pay and
+              the exports all use these. Only HR (admin) can change them.
+            </p>
+          </div>
+          <div className="page-header-actions">
+            <button className="btn btn-ghost" onClick={resetDefaults} disabled={saving}>
+              Standard rates
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="error-banner">
@@ -280,7 +309,7 @@ export default function PayrollSettings() {
 
       <div className="prs-layout">
         <div className="prs-main">
-          <Section id="prs-pf" title="Provident Fund (PF)" intro="Deducted from the employee and matched by the company.">
+          <Section collapsible={embedded} id="prs-pf" title="Provident Fund (PF)" intro="Deducted from the employee and matched by the company.">
             <Row id="prs-pf-on" label="Does the company have PF?" hint="No turns PF off for everyone, whatever the employee master says.">
               <Toggle id="prs-pf-on" value={draft.pfEnabled} onChange={set("pfEnabled")} />
             </Row>
@@ -301,7 +330,7 @@ export default function PayrollSettings() {
             </Row>
           </Section>
 
-          <Section id="prs-esi" title="ESIC" intro="Employees' State Insurance, worked out on basic.">
+          <Section collapsible={embedded} id="prs-esi" title="ESIC" intro="Employees' State Insurance, worked out on basic.">
             <Row id="prs-esi-on" label="Does the company have ESIC?" hint="No turns ESIC off for everyone.">
               <Toggle id="prs-esi-on" value={draft.esicEnabled} onChange={set("esicEnabled")} />
             </Row>
@@ -316,7 +345,7 @@ export default function PayrollSettings() {
             </Row>
           </Section>
 
-          <Section id="prs-split" title="Professional Tax and salary split">
+          <Section collapsible={embedded} id="prs-split" title="Professional Tax and salary split">
             <Row id="prs-pt" label="Deduct Professional Tax?" hint="Uses the slabs by state below. A state with no slabs (e.g. Rajasthan) has no PT.">
               <Toggle id="prs-pt" value={draft.ptEnabled} onChange={set("ptEnabled")} />
             </Row>
@@ -334,7 +363,7 @@ export default function PayrollSettings() {
             </Row>
           </Section>
 
-          <Section
+          <Section collapsible={embedded}
             id="prs-ptslabs"
             title="Professional Tax slabs by state"
             intro="Monthly gross decides the PT. First matching slab wins; the last slab covers everything above."
@@ -428,7 +457,7 @@ export default function PayrollSettings() {
             </form>
           </Section>
 
-          <Section id="prs-wages" title="Minimum wage by state" intro="Basic is never set below these.">
+          <Section collapsible={embedded} id="prs-wages" title="Minimum wage by state" intro="Basic is never set below these.">
             {Object.entries(draft.minWages || {}).map(([state, wage]) => (
               <Row key={state} id={`prs-mw-${state}`} label={titleCase(state)}>
                 <Amount

@@ -3242,6 +3242,22 @@ tbody tr:hover td.ps-sticky {
   min-height: 32px;
 }
 
+/* Employee app lock for one document (EmployeeDocuments.jsx). */
+.ae-slot-lock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted, #667085);
+}
+
+.ae-slot-lock .is-open {
+  color: #b54708;
+  font-weight: 600;
+}
+
 .ae-slot-title {
   flex: 1;
   min-width: 0;
@@ -7905,6 +7921,21 @@ button.lv-stat:hover { border-color: var(--border-strong); background: var(--hov
 .pf-help-box[open] > summary { border-bottom: 1px solid var(--row-line); }
 .pf-tabs { scrollbar-width: none; } .pf-tabs::-webkit-scrollbar { display: none; }
 
+/* Pay Formulas > Payroll Settings tab: each section is a dropdown. */
+.prs-embedded-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.prs-embedded-head p { margin: 0; font-size: 13px; color: var(--text-muted); }
+.prs-drop > summary { display: flex; align-items: center; gap: 12px; padding: 16px 20px; cursor: pointer; list-style: none; }
+.prs-drop > summary::-webkit-details-marker { display: none; }
+.prs-drop > summary > span { flex: 1; min-width: 0; }
+.prs-drop > summary p { margin: 4px 0 0; font-size: 13px; color: var(--text-muted); }
+.prs-drop > summary::after { content: "▾"; font-size: 14px; color: var(--text-muted); transition: transform 0.15s ease; }
+.prs-drop[open] > summary::after { transform: rotate(180deg); }
+.prs-drop[open] > summary { border-bottom: 1px solid var(--row-line); }
+.prs-drop > summary:hover { background: var(--hover); }
+.pf-var-setting { border: 0; font: inherit; cursor: pointer; }
+.pf-var-setting:hover { color: var(--teal); text-decoration: underline; }
+@media (prefers-reduced-motion: reduce) { .prs-drop > summary::after { transition: none; } }
+
 /* Pay Formulas: tablet and phone */
 @media (max-width: 1080px) {
   .pf-vars { max-height: 60vh; }
@@ -7914,6 +7945,9 @@ button.lv-stat:hover { border-color: var(--border-strong); background: var(--hov
   .pf-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; border-bottom: 0; overflow: visible; }
   .pf-tab { justify-content: space-between; margin: 0; padding: 10px 12px; min-height: 44px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--card); white-space: normal; text-align: left; }
   .pf-tab.is-active { border-color: var(--teal); background: var(--teal-soft); }
+  .pf-tab:last-child { grid-column: 1 / -1; }
+  .prs-embedded-head { flex-direction: column; align-items: stretch; }
+  .prs-drop > summary { padding: 14px 16px; min-height: 44px; }
 
   /* Row head: number + code on one line, name under it */
   .pf-item { gap: 8px; }
