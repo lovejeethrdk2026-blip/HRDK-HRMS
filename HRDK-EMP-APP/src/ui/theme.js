@@ -1,14 +1,13 @@
 import { Platform, useColorScheme } from "react-native";
 
-// HRDK design tokens. The brand is the admin site's green (was the logo blue
-// until 2026-11-24). From the HRDK logo:
+// HRDK design tokens. Colours come from the HRDK logo: its blue is the brand,
 // its red is kept for problems only (absent, missed, missing), and a jeweller's
 // gold marks money. Every screen takes colours, sizes and spacing from here.
 
 const light = {
-  brand: "#235347", // HRDK green, same as the admin site (--green-700)
-  brandSoft: "#DAF1DE",
-  brandInk: "#0B2B26",
+  brand: "#1F6E9C", // HRDK blue (logo blue, deepened for text contrast)
+  brandSoft: "#E4EFF6",
+  brandInk: "#0E3D59",
   bg: "#F2F5F8",
   card: "#FFFFFF",
   sunk: "#EEF2F6", // inset areas inside a card
@@ -31,9 +30,9 @@ const light = {
 };
 
 const dark = {
-  brand: "#8EB69B", // HRDK green for dark mode (admin --green-300)
-  brandSoft: "#163832",
-  brandInk: "#DAF1DE",
+  brand: "#6FB3DC",
+  brandSoft: "#13324A",
+  brandInk: "#C3E2F4",
   bg: "#0D151C",
   card: "#15202A",
   sunk: "#1B2834",
