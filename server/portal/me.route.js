@@ -20,6 +20,7 @@ import { correctDetails, getDetails, uploadMyDocument } from "./profile.js";
 import { myChat, myUnread, sendMyMessage } from "../chat/chat.js";
 import { MAX_DOCUMENT_BYTES } from "../employee/employeeDocuments.js";
 import { requireFeature } from "../appSettings/appSettings.route.js";
+import { changeMyPassword } from "./appPasswords.js";
 
 // Employee app (HRDK-EMP-APP) API: /api/me/... Everything after login works on
 // the logged-in employee only (me.controller.js).
@@ -36,6 +37,7 @@ router.get("/document-file/:token", documentByLink); // same idea for the employ
 // appSettings/appSettings.route.js); a switched-off route answers 403.
 router.use(requireEmployee);
 router.get("/profile", profile);
+router.post("/password", changeMyPassword); // { current, next }: the employee's own app password
 router.get("/profile/details", getDetails); // full profile + what is missing
 router.put("/profile/details", requireFeature("profileEdit"), correctDetails); // one-time correction
 router.post("/documents", requireFeature("profileEdit"), express.raw({ type: () => true, limit: MAX_DOCUMENT_BYTES }), uploadMyDocument);

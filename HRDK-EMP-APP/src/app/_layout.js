@@ -30,6 +30,7 @@ export default function RootLayout() {
         <Stack.Screen name="payslip/[month]" options={{ title: "Payslip" }} />
         <Stack.Screen name="profile" options={{ title: "My profile" }} />
         <Stack.Screen name="chat" options={{ title: "Chat" }} />
+        <Stack.Screen name="change-password" options={{ title: "Change password" }} />
       </Stack>
     </AuthProvider>
   );

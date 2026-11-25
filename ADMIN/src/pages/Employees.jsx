@@ -527,9 +527,103 @@ function EmployeeDetail({ employee, onEdit, onTransferred }) {
         </div>
         </>
         )}
+        {can("employees.add") && <AppLoginBox employee={employee} />}
         {can("employees.add") && <EmployeeDocsBox employee={employee} />}
       </div>
     </article>
+  );
+}
+
+// Employee app login: username = the Employee ID they punch with; HR sets a
+// first password here, and the app makes the employee choose their own at the
+// first login (server/portal/appPasswords.js).
+const newPassword = () => {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"; // no 0/O, 1/l/I
+  const pick = new Uint32Array(8);
+  crypto.getRandomValues(pick);
+  return Array.from(pick, (n) => chars[n % chars.length]).join("");
+};
+const when = (d) => (d ? new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+
+function AppLoginBox({ employee }) {
+  const [status, setStatus] = useState(null);
+  const [error, setError] = useState("");
+  const [password, setPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [given, setGiven] = useState(""); // the password just set, shown once to pass on
+
+  useEffect(() => {
+    setStatus(null);
+    setError("");
+    setGiven("");
+    setPassword("");
+    api
+      .get(`/employees/${encodeURIComponent(employee.employeeId)}/app-password`)
+      .then(({ data }) => setStatus(data))
+      .catch((err) => setError(err.response?.data?.message || err.message));
+  }, [employee.employeeId]);
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    try {
+      const { data } = await api.put(`/employees/${encodeURIComponent(employee.employeeId)}/app-password`, { password });
+      setStatus(data);
+      setGiven(password);
+      setPassword("");
+    } catch (err) {
+      setError(err.response?.data?.message || err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="emp-box">
+      <h3 className="emp-box-title">Employee app login</h3>
+      {status ? (
+        <p className="emp-box-note">
+          Username: <strong>{status.username}</strong> (Employee ID) ·{" "}
+          {!status.set
+            ? "No password yet: logs in with the ID only."
+            : status.mustChange
+              ? `First password given ${when(status.setAt)}; the employee has not changed it yet.`
+              : `The employee set their own password ${when(status.changedAt)}.`}
+        </p>
+      ) : (
+        !error && <p className="emp-box-note">Loading…</p>
+      )}
+      {error && (
+        <p className="ae-docs-problem" role="alert">
+          {error}
+        </p>
+      )}
+      {status && (
+        <div className="app-login-form">
+          <input
+            type="text"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder={status.set ? "New password (resets theirs)" : "First password"}
+            autoComplete="off"
+            aria-label="App password"
+          />
+          <button type="button" className="btn" onClick={() => setPassword(newPassword())}>
+            Generate
+          </button>
+          <button type="button" className="btn btn-primary" disabled={saving || password.length < 6} onClick={save}>
+            {saving ? "Saving…" : status.set ? "Reset password" : "Set password"}
+          </button>
+        </div>
+      )}
+      {given && (
+        <p className="app-login-given" role="status">
+          Give this to the employee: Employee ID <strong>{status?.username}</strong>, password <strong>{given}</strong>. They must choose their own
+          password when they first log in. (Shown only now.)
+        </p>
+      )}
+      <p className="emp-box-note">At least 6 characters. Setting or resetting logs the employee out of the app.</p>
+    </section>
   );
 }
 

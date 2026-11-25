@@ -8391,3 +8391,26 @@ button.lv-stat:hover { border-color: var(--border-strong); background: var(--hov
 .emp-doc-tile .emp-doc-actions {
   flex-wrap: wrap;
 }
+
+/* Employees panel > Employee app login (pages/Employees.jsx AppLoginBox). */
+.app-login-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0;
+}
+.app-login-form input {
+  height: 38px;
+  min-width: 220px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  font-family: var(--font-mono, monospace);
+}
+.app-login-given {
+  margin: 6px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--teal-soft, #eaeeec);
+  font-size: 14px;
+}

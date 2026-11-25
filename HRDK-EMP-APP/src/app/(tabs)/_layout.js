@@ -39,6 +39,8 @@ export default function TabsLayout() {
   const features = useFeatures();
   if (checking) return <Loading />;
   if (!employee) return <Redirect href="/login" />;
+  // Still on the password HR gave: choose an own one before anything else.
+  if (employee.mustChangePassword) return <Redirect href="/change-password" />;
 
   return (
     <Tabs

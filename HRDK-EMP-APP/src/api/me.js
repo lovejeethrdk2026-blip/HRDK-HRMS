@@ -6,8 +6,9 @@ import { api, apiUpload, tokens } from "./client";
 // so no call ever sends an employee ID except the login itself.
 //
 // Server: HRMS server/portal/me.route.js (/api/me).
-//   POST /me/auth/login       { employeeId, device }         -> { accessToken, refreshToken, employee }
-//                             (Employee ID only for now; OTP / password later)
+//   POST /me/auth/login       { employeeId, password, device } -> { accessToken, refreshToken, employee }
+//                             (employee.mustChangePassword: still on HR's first password)
+//   POST /me/password         { current, next }
 //   POST /me/auth/logout
 //   GET  /me/profile                                         -> employee
 //   GET  /me/attendance?month=YYYY-MM                        -> { month, shift, days: [...] }
@@ -25,8 +26,9 @@ const device = () => ({
   appVersion: Constants.expoConfig?.version || ""
 });
 
-export async function login(employeeId) {
-  const data = await api("/me/auth/login", { method: "POST", body: { employeeId, device: device() } });
+// password: HR's first password or the employee's own ("" while they have none).
+export async function login(employeeId, password = "") {
+  const data = await api("/me/auth/login", { method: "POST", body: { employeeId, password, device: device() } });
   await tokens.set(data);
   return data.employee;
 }
@@ -37,6 +39,8 @@ export async function logout() {
 }
 
 export const getProfile = () => api("/me/profile");
+// My own app password: current ("" when I have none yet) -> next.
+export const changePassword = (current, next) => api("/me/password", { method: "POST", body: { current, next } });
 // Chat with my manager (HR can read and answer too).
 export const getChat = () => api("/me/chat");
 export const sendChat = (text) => api("/me/chat", { method: "POST", body: { text } });

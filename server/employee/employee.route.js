@@ -17,6 +17,7 @@ import {
 import { getSalarySheet } from "./salarySheet.js";
 import { MAX_DOCUMENT_BYTES, deleteDocument, getDocument, setDocumentLock, uploadDocument } from "./employeeDocuments.js";
 import { isLoggedIn } from "../middleware/auth.js";
+import { appPasswordStatus, setAppPassword } from "../portal/appPasswords.js";
 import { accessFor } from "../roles/roles.controller.js";
 
 // Only a signed-in user whose role has this permission (admins always do).
@@ -76,6 +77,9 @@ router.post(
 );
 router.get("/:employeeId/documents/:documentId", isLoggedIn, getDocument);
 router.delete("/:employeeId/documents/:documentId", isLoggedIn, deleteDocument);
+// Employee app login: see / set the password HR gives (Employees panel).
+router.get("/:employeeId/app-password", allowed("employees.add"), appPasswordStatus);
+router.put("/:employeeId/app-password", allowed("employees.add"), express.json(), setAppPassword);
 // Unlock / lock one document for the employee app (upload it again once).
 router.put("/:employeeId/documents-lock", isLoggedIn, express.json(), setDocumentLock);
 

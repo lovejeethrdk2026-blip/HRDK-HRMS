@@ -13,6 +13,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { appFeatures } from "../appSettings/appSettings.route.js";
 import * as stats from "../../ADMIN/src/utils/attendanceStats.js";
 import { buildPayslipPdf } from "./payslipPdf.js";
+import { checkLogin, passwordOf } from "./appPasswords.js";
 import { sendDocument } from "../employee/employeeDocuments.js";
 
 // The employee app (HRDK-EMP-APP): every route works on the logged-in
@@ -62,6 +63,7 @@ async function employeeFor(id) {
     { _id: 0, employeeId: 1, designation: 1, joiningDate: 1, reportingManager: 1, mobile: 1, shift: 1, subDepartment: 1 }
   ).lean();
   const mobile = String(profile?.mobile || "");
+  const password = await passwordOf(id);
   return {
     employeeId: id,
     code: profile?.employeeId || "",
@@ -74,6 +76,10 @@ async function employeeFor(id) {
     mobile: mobile.length >= 4 ? `${mobile.slice(0, 2)}xxxxxx${mobile.slice(-2)}` : "",
     shift: profile?.shift?.in && profile?.shift?.out ? profile.shift : null,
     active: master.isActive !== false && !master.leavingDate,
+    // App login: hasPassword false = ID-only so far; mustChangePassword true =
+    // still on the password HR gave, the app asks for a new one first.
+    hasPassword: Boolean(password),
+    mustChangePassword: Boolean(password?.mustChange),
     // What HR lets the app show (Employee App settings).
     features: await appFeatures()
   };
@@ -89,13 +95,17 @@ export const requireEmployee = handle(async (req, res, next) => {
   next();
 });
 
-// POST /api/me/auth/login { employeeId } -> { accessToken, refreshToken, employee }
+// POST /api/me/auth/login { employeeId, password } -> { accessToken, refreshToken, employee }
+// Password: the one HR gave (first time) or the employee's own
+// (portal/appPasswords.js). No password set yet: ID alone, while
+// EMP_APP_ID_LOGIN=1.
 export const login = handle(async (req, res) => {
-  if (process.env.EMP_APP_ID_LOGIN !== "1") fail(403, "App login is not switched on yet. Ask HR.");
   const id = String(req.body?.employeeId ?? "").trim();
   if (!/^\d{1,10}$/.test(id)) fail(400, "Enter your Employee ID");
   const employee = await employeeFor(id);
   if (!employee || !employee.active) fail(404, "No active employee with this ID");
+  const problem = await checkLogin(id, req.body?.password);
+  if (problem) fail(401, problem);
   const token = crypto.randomBytes(32).toString("hex");
   const now = new Date();
   await sessions().insertOne({

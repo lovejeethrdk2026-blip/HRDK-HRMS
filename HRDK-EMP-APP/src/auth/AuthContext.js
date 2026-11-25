@@ -24,8 +24,8 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
-  const signIn = useCallback(async (employeeId) => {
-    const who = await login(employeeId);
+  const signIn = useCallback(async (employeeId, password) => {
+    const who = await login(employeeId, password);
     setEmployee(who);
   }, []);
 

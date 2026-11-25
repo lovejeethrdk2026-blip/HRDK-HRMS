@@ -187,6 +187,12 @@ export default function Me() {
             onPress={checking ? undefined : () => checkForUpdates(setChecking)}
           />
         ) : null}
+        <ListRow
+          icon="key-outline"
+          label={employee?.hasPassword ? "Change password" : "Set a password"}
+          note={employee?.hasPassword ? undefined : "Log in with your ID and a password of your own"}
+          onPress={() => router.push("/change-password")}
+        />
         <ListRow icon="log-out-outline" label="Log out" danger onPress={logOut} last />
       </Card>
 

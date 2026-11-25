@@ -226,7 +226,23 @@ function LogoMark({ c, style, hStyle, rStyle, shine, onLayout, label = true }) {
 
 // Employee ID box with a floating label: the label sits in the box, and lifts
 // up small when the box is focused or filled; a brand line grows underneath.
-function IdInput({ c, value, onChangeText, onSubmit, inputRef, error, reduced }) {
+function IdInput({
+  c,
+  value,
+  onChangeText,
+  onSubmit,
+  inputRef,
+  error,
+  reduced,
+  label = "Employee ID",
+  icon = "id-card-outline",
+  hint = "e.g. 10395",
+  keyboardType = "number-pad",
+  maxLength = 10,
+  secure = false,
+  returnKeyType = "go"
+}) {
+  const [shown, setShown] = useState(false); // password: eye button shows it
   const [focused, setFocused] = useState(false);
   const [labelW, setLabelW] = useState(0);
   const lift = useRef(new Animated.Value(value ? 1 : 0)).current;
@@ -250,14 +266,14 @@ function IdInput({ c, value, onChangeText, onSubmit, inputRef, error, reduced })
 
   return (
     <View style={[styles.idBox, { backgroundColor: c.sunk, borderColor: error ? c.bad : focused ? c.brandSoft : "transparent" }]}>
-      <Ionicons name="id-card-outline" size={20} color={tint} />
+      <Ionicons name={icon} size={20} color={tint} />
       <View style={{ flex: 1, justifyContent: "center" }}>
         <Animated.Text
           pointerEvents="none"
           onLayout={(e) => setLabelW(e.nativeEvent.layout.width)}
           style={[type.body, styles.idLabel, { color: tint, fontWeight: up ? "600" : "400" }, labelStyle]}
         >
-          Employee ID
+          {label}
         </Animated.Text>
         <TextInput
           ref={inputRef}
@@ -265,18 +281,25 @@ function IdInput({ c, value, onChangeText, onSubmit, inputRef, error, reduced })
           onChangeText={onChangeText}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder={focused && !value ? "e.g. 10395" : ""}
+          placeholder={focused && !value ? hint : ""}
           placeholderTextColor={c.faint}
-          keyboardType="number-pad"
-          returnKeyType="go"
+          keyboardType={keyboardType}
+          returnKeyType={returnKeyType}
           onSubmitEditing={onSubmit}
-          maxLength={10}
-          accessibilityLabel="Employee ID"
+          maxLength={maxLength}
+          secureTextEntry={secure && !shown}
+          autoCapitalize="none"
+          autoCorrect={false}
+          accessibilityLabel={label}
           style={[styles.idText, { color: c.text }]}
         />
       </View>
-      {value ? (
-        <Pressable onPress={() => onChangeText("")} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear Employee ID">
+      {secure && value ? (
+        <Pressable onPress={() => setShown((s) => !s)} hitSlop={10} accessibilityRole="button" accessibilityLabel={shown ? "Hide password" : "Show password"}>
+          <Ionicons name={shown ? "eye-off-outline" : "eye-outline"} size={20} color={c.faint} />
+        </Pressable>
+      ) : value ? (
+        <Pressable onPress={() => onChangeText("")} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Clear ${label}`}>
           <Ionicons name="close-circle" size={20} color={c.faint} />
         </Pressable>
       ) : null}
@@ -393,6 +416,8 @@ export default function Login() {
   const insets = useSafeAreaInsets();
   const { employee, checking, signIn } = useAuth();
   const [employeeId, setEmployeeId] = useState("");
+  const [password, setPassword] = useState("");
+  const passwordRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const reduced = useReducedMotion();
@@ -480,7 +505,7 @@ export default function Login() {
     setBusy(true);
     setError("");
     try {
-      await signIn(id);
+      await signIn(id, password);
     } catch (err) {
       setError(err.message);
       setBusy(false);
@@ -599,10 +624,12 @@ export default function Login() {
                 <Text style={[type.small, styles.eyebrowText, { color: c.gold }]}>{greeting().toUpperCase()}</Text>
               </View>
               <Text style={[type.title, { color: c.text, fontSize: 24, lineHeight: 30 }]}>Welcome back</Text>
-              <Text style={[type.body, { color: c.muted }]}>Log in with the Employee ID you use on the punch machine.</Text>
+              <Text style={[type.body, { color: c.muted }]}>
+                Log in with the Employee ID you use on the punch machine and your password.
+              </Text>
             </Animated.View>
 
-            <Animated.View style={rise(5, 10)}>
+            <Animated.View style={[{ gap: space.sm }, rise(5, 10)]}>
               <IdInput
                 c={c}
                 value={employeeId}
@@ -610,10 +637,29 @@ export default function Login() {
                   setEmployeeId(t.replace(/\D/g, ""));
                   if (error) setError("");
                 }}
-                onSubmit={submit}
+                onSubmit={() => passwordRef.current?.focus?.()}
+                returnKeyType="next"
                 inputRef={inputRef}
                 error={Boolean(error)}
                 reduced={reduced}
+              />
+              <IdInput
+                c={c}
+                value={password}
+                onChangeText={(t) => {
+                  setPassword(t);
+                  if (error) setError("");
+                }}
+                onSubmit={submit}
+                inputRef={passwordRef}
+                error={Boolean(error)}
+                reduced={reduced}
+                label="Password"
+                icon="lock-closed-outline"
+                hint="From HR, or your own"
+                keyboardType="default"
+                maxLength={64}
+                secure
               />
             </Animated.View>
 
@@ -635,7 +681,9 @@ export default function Login() {
           <Animated.View style={[styles.footer, rise(STEPS - 1, 8)]}>
             <Ionicons name={DEMO ? "flask-outline" : "help-circle-outline"} size={14} color={DEMO ? c.warn : c.faint} />
             <Text style={[type.small, { color: DEMO ? c.warn : c.faint, textAlign: "center", flexShrink: 1 }]}>
-              {DEMO ? "Demo mode: sample data, any ID works." : "Forgot your ID? It is on your punch card, or ask HR."}
+              {DEMO
+                ? "Demo mode: sample data, any ID works."
+                : "Forgot your password? Ask HR to reset it. Your ID is on your punch card."}
             </Text>
           </Animated.View>
         </View>
