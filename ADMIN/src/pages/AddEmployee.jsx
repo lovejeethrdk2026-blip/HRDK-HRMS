@@ -9,7 +9,7 @@ import SalarySplit from "../components/SalarySplit";
 import EmployeeDocuments, { missingKyc, uploadDocuments } from "../components/EmployeeDocuments";
 import FamilyMembers, { emptyFamily, familyCount, familyFrom, familyRecord } from "../components/FamilyMembers";
 import PfNominees, { nomineesFrom, nomineesRecord, pfShareTotal } from "../components/PfNominees";
-import { salaryStructure } from "@salary";
+import { firstPayVersion, latestPayVersion, payVersionIds, salaryStructure } from "@salary";
 
 // Employees > Add Employee, laid out like the HR joining sheet. Posts to
 // POST /api/employees (server/employee/employee.controller.js).
@@ -72,6 +72,8 @@ const SECTIONS = [
     title: "Joining & pay",
     note: "Joining date, salary and statutory benefits.",
     fields: [
+      // Pay Formulas version the split is worked out with (newest first). First, on top.
+      { label: "Pay version", path: "payVersion", type: "select", options: () => [...payVersionIds()].reverse() },
       { label: "Date of joining", path: "joiningDate", type: "date" },
       { label: "Salary type", path: "salaryType", type: "select", options: ["Salary", "Wages"] },
       {
@@ -235,7 +237,8 @@ const SECTIONS = [
 const FIELDS = SECTIONS.flatMap((section) => section.fields);
 
 // Fields shown on the form (hidden ones stay in the draft only).
-const visibleFields = (section) => section.fields.filter((field) => !field.hidden);
+const visibleFields = (section) =>
+  section.fields.filter((field) => !(typeof field.hidden === "function" ? field.hidden() : field.hidden));
 const SHOWN_COUNT = SECTIONS.reduce((sum, section) => sum + visibleFields(section).length, 0);
 
 // Wizard order: Address second, then the rest of the SECTIONS with Family after
@@ -301,7 +304,8 @@ function SalaryBreakdown({ draft }) {
     monthlyCtc: draft.monthlyCtc,
     state: draft.state,
     pfApplicable: draft.pfApplicable === "Yes",
-    esicApplicable: draft.esicApplicable === "Yes"
+    esicApplicable: draft.esicApplicable === "Yes",
+    payVersion: draft.payVersion
   });
   return (
     <div className="ae-salary">
@@ -694,7 +698,7 @@ function Field({ field, value, onChange, locked, hint, lists }) {
       />
     );
   } else if (type === "select" || type === "yesno") {
-    const choices = type === "yesno" ? ["Yes", "No"] : options;
+    const choices = type === "yesno" ? ["Yes", "No"] : typeof options === "function" ? options() : options;
     control = (
       <select
         className="detail-input"
@@ -768,7 +772,13 @@ export default function AddEmployee({ onNavigate, employee, onSaved, onCancel })
       cancelled = true;
     };
   }, []);
-  const [draft, setDraft] = useState(() => (editing ? withStatutoryRule(draftFrom(employee)) : emptyDraft()));
+  // Pay version: a new employee starts on the latest; one saved before pay
+  // versions shows the first (the one their pay is worked out with).
+  const [draft, setDraft] = useState(() =>
+    editing
+      ? withStatutoryRule({ ...draftFrom(employee), payVersion: employee.payVersion || firstPayVersion() })
+      : { ...emptyDraft(), payVersion: latestPayVersion() }
+  );
   // Monthly CTC follows yearly / 12 until the admin types their own figure; a
   // saved figure that differs from yearly / 12 counts as typed.
   const [monthlyTyped, setMonthlyTyped] = useState(
@@ -876,7 +886,7 @@ export default function AddEmployee({ onNavigate, employee, onSaved, onCancel })
   }
 
   function clearForm() {
-    setDraft(emptyDraft());
+    setDraft({ ...emptyDraft(), payVersion: latestPayVersion() });
     setMonthlyTyped(false);
     setStatutoryPicked(false);
     setPendingDocs([]);

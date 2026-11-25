@@ -77,14 +77,69 @@ export const DEFAULT_PAYROLL_SETTINGS = {
 
 let settings = { ...DEFAULT_PAYROLL_SETTINGS };
 
-// Replaces the settings in use (missing keys keep their defaults).
+// Saved values -> the settings the formulas use (missing keys keep their defaults).
+function buildSettings(next) {
+  const built = { ...DEFAULT_PAYROLL_SETTINGS, ...(next || {}) };
+  built.minWages = { ...(next?.minWages || DEFAULT_PAYROLL_SETTINGS.minWages) };
+  built.ptSlabs = structuredClone(next?.ptSlabs || DEFAULT_PAYROLL_SETTINGS.ptSlabs);
+  built.formulas = Array.isArray(next?.formulas) ? next.formulas.map((c) => ({ ...c })) : [];
+  built.splitFormulas = stageList("split", next?.splitFormulas);
+  built.monthFormulas = stageList("month", next?.monthFormulas);
+  return built;
+}
+
+// Replaces the settings in use: the latest pay version, the one Payroll
+// Settings and Pay Formulas edit.
 export function setPayrollSettings(next) {
-  settings = { ...DEFAULT_PAYROLL_SETTINGS, ...(next || {}) };
-  settings.minWages = { ...(next?.minWages || DEFAULT_PAYROLL_SETTINGS.minWages) };
-  settings.ptSlabs = structuredClone(next?.ptSlabs || DEFAULT_PAYROLL_SETTINGS.ptSlabs);
-  settings.formulas = Array.isArray(next?.formulas) ? next.formulas.map((c) => ({ ...c })) : [];
-  settings.splitFormulas = stageList("split", next?.splitFormulas);
-  settings.monthFormulas = stageList("month", next?.monthFormulas);
+  settings = buildSettings(next);
+  if (versionIds?.length) versionSettings.set(versionIds.at(-1), settings);
+}
+
+// ---- Pay versions (Pay Formulas page) ----------------------------------------
+// A pay version is a frozen copy of every payroll setting and formula ("0.1",
+// "0.2", ...). Each employee's pay (and each salary revision) names the version
+// it is worked out with (payVersion); a pay with none uses the first version,
+// so the pay worked out before versions existed never changes. Only the latest
+// version can be edited; making a new one copies it.
+let versionSettings = new Map(); // "0.1" -> settings
+let versionIds = []; // oldest first
+
+// versions: [{ version, values }] oldest first (the latest = the settings in use).
+export function setPayVersions(versions) {
+  versionIds = [];
+  versionSettings = new Map();
+  for (const { version, values } of Array.isArray(versions) ? versions : []) {
+    if (!version || versionSettings.has(version)) continue;
+    versionIds.push(version);
+    versionSettings.set(version, buildSettings(values));
+  }
+  // The latest version is the one in use: same object, so edits show at once.
+  if (versionIds.length) versionSettings.set(versionIds.at(-1), settings);
+}
+
+export const payVersionIds = () => [...versionIds];
+export const latestPayVersion = () => versionIds.at(-1) || "";
+export const firstPayVersion = () => versionIds[0] || "";
+
+// The version a pay record names, or the first one when it names none (or one
+// that does not exist); "" before versions are loaded.
+export function resolvePayVersion(version) {
+  if (version && versionSettings.has(version)) return version;
+  return versionIds[0] || "";
+}
+
+// Runs fn with that version's settings in place (sync code only), then puts
+// the latest back.
+export function withPayVersion(version, fn) {
+  const target = versionSettings.get(resolvePayVersion(version));
+  if (!target || target === settings) return fn();
+  const latest = settings;
+  settings = target;
+  try {
+    return fn();
+  } finally {
+    settings = latest;
+  }
 }
 
 // A saved built-in list when it still checks out, else the standard one.
@@ -216,7 +271,12 @@ export function inHandSalary({ basic, hra, bonus, special, pf, esic, pt = 0 }) {
 // pay month (only February's PT differs). PF / ESIC need both the company
 // switch (Payroll Settings) and the employee's own; ESIC also stops above the
 // ESIC ceiling when one is set.
-export function salaryStructure({ monthlyCtc, state, pfApplicable, esicApplicable }, month) {
+export function salaryStructure(pay, month) {
+  return withPayVersion(pay?.payVersion, () => structureNow(pay, month));
+}
+
+// salaryStructure with the settings in place.
+function structureNow({ monthlyCtc, state, pfApplicable, esicApplicable }, month) {
   const ctc = Number(monthlyCtc) || 0;
   const pf = Boolean(pfApplicable) && settings.pfEnabled;
   const esic = Boolean(esicApplicable) && settings.esicEnabled;
@@ -259,9 +319,13 @@ function splitFor(ctc, state, pf, esic, month) {
 // Month pay (Month Shift Pay) from settings.monthFormulas. vars: the month's
 // figures (PAY_VARIABLES names); the Payroll Settings numbers are added here.
 // Returns { values: { PER_DAY, EARNED, GROSS, PF, ..., IN_HAND }, errors }.
-export function monthPay(vars) {
-  return runFormulas(settings.monthFormulas, { ...settingVariables(settings), ...vars });
+// payVersion: the employee's pay version for that month (see above).
+export function monthPay(vars, payVersion) {
+  return withPayVersion(payVersion, () => runFormulas(settings.monthFormulas, { ...settingVariables(settings), ...vars }));
 }
+
+// The settings of one pay version (the first when none / unknown).
+export const payrollSettingsOf = (version) => versionSettings.get(resolvePayVersion(version)) || settings;
 
 // State history: where the employee worked and when, oldest first, as
 // [{ state, city, from, to, remark }] with "DD-MM-YYYY" dates and to "" while
@@ -305,6 +369,7 @@ export function payHistoryOf(employee) {
       monthlyCtc: employee.monthlyCtc ?? null,
       pfApplicable: employee.pfApplicable ?? null,
       esicApplicable: employee.esicApplicable ?? null,
+      payVersion: employee.payVersion || "",
       kind: "joining",
       from: employee.joiningDate || "",
       to: "",
@@ -369,7 +434,11 @@ export function employeeOn(employee, date) {
     reportingManager: spell.reportingManager || "",
     monthlyCtc: pick("monthlyCtc"),
     pfApplicable: pick("pfApplicable"),
-    esicApplicable: pick("esicApplicable")
+    esicApplicable: pick("esicApplicable"),
+    // The pay version that pay is worked out with ("" = the first version).
+    // Only the pay entry's own: an older entry without one stays on the first
+    // version even when the employee's current pay is on a newer one.
+    payVersion: pay.payVersion || (Object.keys(pay).length ? "" : employee.payVersion || "")
   };
 }
 

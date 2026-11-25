@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "../api/axios";
-import { departmentHistoryOf, payHistoryOf, salaryOn, sortableDate, stateHistoryOf, workSpans } from "@salary";
+import { departmentHistoryOf, payHistoryOf, payVersionIds, salaryOn, sortableDate, stateHistoryOf, workSpans } from "@salary";
 import { rupees } from "./SalarySplit";
 
 // An Employees card's history boxes: month-wise payroll, and each salary,
@@ -251,11 +251,95 @@ export function monthsWorked(employee, shown = MONTHS_SHOWN) {
   return months.slice(-shown);
 }
 
+// Each month's full salary from Joining & pay, newest first: that month's
+// CTC split with the employee's pay version (server portal/monthPay.js). No
+// punch (Matrix) days, no BC365 -- what BC365 gave is the other tab.
+export function PayrollHistory({ employee }) {
+  const months = monthsWorked(employee).reverse();
+  const [pay, setPay] = useState(null); // { "2026-10": payslip | null }
+  const [error, setError] = useState("");
+  const key = (y, m) => `${y}-${String(m).padStart(2, "0")}`;
+  const monthList = months.map(([y, m]) => key(y, m)).join(",");
+
+  useEffect(() => {
+    if (!monthList) return;
+    let live = true;
+    setPay(null);
+    setError("");
+    api
+      .get(`/employees/${encodeURIComponent(employee.employeeId)}/month-pay`, { params: { months: monthList } })
+      .then(({ data }) => live && setPay(Object.fromEntries(data.months.map((row) => [row.month, row.payslip]))))
+      .catch((err) => live && setError(err.response?.data?.message || err.message));
+    return () => {
+      live = false;
+    };
+  }, [employee.employeeId, monthList]);
+
+  if (!months.length) return <p className="ch-empty">No date of joining, so no months to show.</p>;
+  if (error) return <p className="ch-empty">Could not work out the pay: {error}</p>;
+  if (!pay) return <p className="ch-empty">Loading…</p>;
+
+  const amount = (slip, label) => slip.deductions.find((d) => d.label === label)?.amount || 0;
+  const showVersion = payVersionIds().length > 1; // only once v0.2 exists
+  return (
+    <div className="table-scroll">
+      <table className="st-table">
+        <thead>
+          <tr>
+            <th>Month</th>
+            <th>Department</th>
+            {showVersion && <th>Version</th>}
+            <th className="st-num">Monthly CTC</th>
+            <th className="st-num">Gross</th>
+            <th className="st-num">PF</th>
+            <th className="st-num">ESIC</th>
+            <th className="st-num">PT</th>
+            <th className="st-num">Deductions</th>
+            <th className="st-num">Net pay</th>
+          </tr>
+        </thead>
+        <tbody>
+          {months.map(([year, month, day]) => {
+            const salary = salaryOn(employee, day);
+            const slip = pay[key(year, month)];
+            return (
+              <tr key={`${year}-${month}`}>
+                <td>
+                  {MONTH_NAMES[month - 1]} {year}
+                </td>
+                <td>{place(salary.department, salary.subDepartment)}</td>
+                {slip ? (
+                  <>
+                    {showVersion && <td>{slip.payVersion ? `v${slip.payVersion}` : "—"}</td>}
+                    <td className="st-num">{rupees(slip.monthlyCtc)}</td>
+                    <td className="st-num">{rupees(slip.totalEarnings)}</td>
+                    <td className="st-num">{rupees(amount(slip, "PF"))}</td>
+                    <td className="st-num">{rupees(amount(slip, "ESIC"))}</td>
+                    <td className="st-num">{rupees(amount(slip, "Professional tax"))}</td>
+                    <td className="st-num">{rupees(slip.totalDeductions)}</td>
+                    <td className="st-num">
+                      <strong>{rupees(slip.net)}</strong>
+                    </td>
+                  </>
+                ) : (
+                  <td colSpan={showVersion ? 8 : 7} className="ch-empty">
+                    No CTC this month
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // Each month's pay as Pay Sheet 1 (BC365) shows it, newest first: what the
 // employee was actually paid, matched by Matrix ID (Initials No. / code).
 // Months on the rolls with no Pay Sheet row say so. Department is this app's
 // own record for that month.
-export function PayrollHistory({ employee }) {
+export function Bc365PayHistory({ employee }) {
   const months = monthsWorked(employee).reverse();
   const [pay, setPay] = useState(null); // { "2026-10": { totalEarnings, ... } }
   const [error, setError] = useState("");

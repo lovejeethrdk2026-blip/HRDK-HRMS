@@ -8,7 +8,8 @@ import { employeeShifts } from "../dailyRegister/employeeShifts.js";
 import { approvedLeaveDays } from "../leave/leaveDays.js";
 import { applyLeave, cancelLeave, listBalances, listTypes } from "../leave/leave.controller.js";
 import { LeaveApplication } from "../leave/models/Leave.js";
-import { fetchPaySheet, PaySheetError } from "../paySheet/paySheet.controller.js";
+import { PaySheetError } from "../paySheet/paySheet.controller.js";
+import { finishedMonths, payslipOf } from "./monthPay.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { appFeatures } from "../appSettings/appSettings.route.js";
 import * as stats from "../../ADMIN/src/utils/attendanceStats.js";
@@ -253,87 +254,39 @@ export const cancelMyLeave = handle(async (req, res) => {
   res.json(await run(cancelLeave, { params: { id: req.params.id }, body: { remarks: "Cancelled by employee" } }));
 });
 
-// ---------- payslips (Pay Sheet 1, BC365) ----------
+// ---------- payslips (portal/monthPay.js) ----------
+// The salary the app shows is the full monthly split from Add Employee >
+// Joining & pay (that month's CTC, the employee's pay version). No Matrix
+// punch days, no BC365.
 
-const round = (n) => Math.round((Number(n) || 0) * 100) / 100;
-const sum = (rows, ...keys) => round(rows.reduce((total, row) => total + keys.reduce((s, k) => s + (Number(row[k]) || 0), 0), 0));
+const profileFor = (id) => EmployeeProfile.findOne({ $or: [{ initialsNo: id }, { employeeId: id }] }).lean();
 
-function monthRange(month) {
-  const [y, m] = month.split("-").map(Number);
-  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  return [`${month}-01`, `${month}-${pad(last)}`];
-}
-
-async function payRows(id, month) {
-  const [from, to] = monthRange(month);
-  const rows = await fetchPaySheet(1, from, to);
-  return (Array.isArray(rows) ? rows : []).filter((row) => String(row.initials ?? "").trim() === id);
-}
-
-// Finished months of this financial year (and the last few of the previous
-// one), newest first.
-function payMonths() {
-  const now = new Date(Date.now() + 5.5 * 3600000);
-  const months = [];
-  for (let i = 1; i <= 12; i++) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
-    months.push(`${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`);
-  }
-  return months;
-}
-
-// GET /api/me/payslips -> [{ month, net, released }]
+// GET /api/me/payslips -> [{ month, net, released }] finished months, newest first
 export const payslips = handle(async (req, res) => {
+  const profile = await profileFor(req.employeeId);
+  if (!profile) return res.json([]);
   const result = [];
-  for (const month of payMonths()) {
-    const mine = await payRows(req.employeeId, month);
-    if (mine.length) result.push({ month, net: sum(mine, "netAmount"), released: true });
+  for (const month of finishedMonths(profile)) {
+    const slip = payslipOf(profile, month);
+    if (slip) result.push({ month, net: slip.net, released: true });
   }
   res.json(result);
 });
 
-// GET /api/me/payslips/:month -> { month, salaryTypes, earnings, deductions, net }
+// GET /api/me/payslips/:month -> { month, days, earnings, deductions, totalEarnings, totalDeductions, net }
 export const payslip = handle(async (req, res) => {
   const month = req.params.month;
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) fail(400, "Month must be YYYY-MM");
   res.json(await payslipData(req.employeeId, month));
 });
 
-// One month's payslip figures from Pay Sheet 1 (BC365), for the app screen
-// and the PDF.
+// One month's payslip figures, for the app screen and the PDF.
 async function payslipData(id, month) {
-  const mine = await payRows(id, month);
-  if (!mine.length) fail(404, "No payslip for this month");
-  const earnings = [
-    ["Basic", "basicWages", "basicSalary"],
-    ["House rent allowance", "houseRentAllowanceWages", "houseRentAllowanceSalary"],
-    ["Transport allowance", "transportAllowanceWages", "transportAllowanceSalary"],
-    ["Special allowance", "specialAllowanceWage", "specialAllowanceSalary"],
-    ["Incentive", "incentiveWages", "incentives"],
-    ["Bonus", "bonusWages", "bonusSalary"],
-    ["Statutory bonus", "statutoryBonus1Wages", "statutoryBonus1Salary", "statutoryBonus2Wages", "statutoryBonus2Salary"],
-    ["Stipend", "stipendWages", "stipendSalary"],
-    ["Overtime", "overtimeWages", "overtimeSalary"]
-  ]
-    .map(([label, ...keys]) => ({ label, amount: sum(mine, ...keys) }))
-    .filter((row) => row.amount);
-  const deductions = [
-    ["PF", "pfEmployee"],
-    ["ESIC", "esiEmployee"],
-    ["Professional tax", "professionalTax"],
-    ["TDS", "tdsOnSalary"]
-  ]
-    .map(([label, key]) => ({ label, amount: sum(mine, key) }))
-    .filter((row) => row.amount);
-  return {
-    month,
-    salaryTypes: [...new Set(mine.map((row) => row.salaryType).filter(Boolean))],
-    earnings,
-    deductions,
-    totalEarnings: sum(mine, "totalEarnings"),
-    totalDeductions: sum(mine, "totalDeductions"),
-    net: sum(mine, "netAmount")
-  };
+  const profile = await profileFor(id);
+  if (!profile) fail(404, "HR has not created your full profile yet. Ask HR.");
+  const slip = payslipOf(profile, month);
+  if (!slip) fail(404, "No payslip for this month");
+  return slip;
 }
 
 // ---------- payslip PDF ----------

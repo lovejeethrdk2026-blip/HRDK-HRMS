@@ -53,6 +53,9 @@ const employeeProfileSchema = new mongoose.Schema(
     ],
     pfApplicable: { type: Boolean, default: null },
     esicApplicable: { type: Boolean, default: null },
+    // Pay version (Pay Formulas) the current pay is worked out with; "" = the
+    // first version (utils/salaryFormulas.js withPayVersion).
+    payVersion: text,
     // Every pay the employee has been on, oldest first, kept like the state
     // history: a Salary revision (or a department transfer with a new CTC)
     // closes the current entry the day before its effective date. kind:
@@ -63,6 +66,7 @@ const employeeProfileSchema = new mongoose.Schema(
         monthlyCtc: { type: Number, default: null },
         pfApplicable: { type: Boolean, default: null },
         esicApplicable: { type: Boolean, default: null },
+        payVersion: text, // pay version this pay is worked out with ("" = the first)
         kind: text,
         from: text,
         to: text,

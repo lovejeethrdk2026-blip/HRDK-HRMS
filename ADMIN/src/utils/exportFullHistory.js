@@ -1,6 +1,6 @@
 import api from "../api/axios";
 import { XLSX, loadXlsx } from "./xlsx";
-import { departmentHistoryOf, payHistoryOf, salaryOn, sortableDate, stateHistoryOf } from "@salary";
+import { departmentHistoryOf, payHistoryOf, payVersionIds, resolvePayVersion, salaryOn, sortableDate, stateHistoryOf } from "@salary";
 import { monthsWorked } from "../components/ChangeHistory";
 import { statusOf } from "./employeeStatus";
 
@@ -78,13 +78,25 @@ const PERSON = [
   ]
 ];
 
-// What changed in each month, by kind:
-// { "YYYY-MM": { joined: [], state: [], department: [], salary: [], oldCtc, newCtc, exit: [] } }
-function changesByMonth(employee) {
+const inr = (n) => (n == null || n === "" ? "-" : `Rs ${Math.round(Number(n)).toLocaleString("en-IN")}`);
+const EMPTY = () => ({ joined: [], state: [], department: [], salary: [], exit: [], description: [] });
+
+// What changed in each month, by kind, plus one plain line per change for the
+// Description column ("Salary increased Rs 20,000 -> Rs 25,000 (+25%) from 01-11-2026"):
+// { "YYYY-MM": { joined: [], state: [], department: [], salary: [], oldCtc, newCtc, exit: [], description: [] } }
+function changesByMonth(employee, seeSalary) {
   const changes = {};
-  const at = (date) => (changes[monthKey(date)] ??= { joined: [], state: [], department: [], salary: [], exit: [] });
+  const at = (date) => (changes[monthKey(date)] ??= EMPTY());
   const note = (remark) => (remark ? ` - ${remark}` : "");
-  if (employee.joiningDate) at(employee.joiningDate).joined.push(`Joined (${employee.joiningDate})`);
+  const versions = payVersionIds().length > 1; // say the version once there is more than one
+  if (employee.joiningDate) {
+    at(employee.joiningDate).joined.push(`Joined (${employee.joiningDate})`);
+    const s = salaryOn(employee, employee.joiningDate);
+    const where = [s.department, s.designation && `as ${s.designation}`].filter(Boolean).join(" ");
+    const ctc = seeSalary && s.monthlyCtc ? ` at ${inr(s.monthlyCtc)} a month` : "";
+    const version = seeSalary && versions ? ` (pay version v${resolvePayVersion(payHistoryOf(employee)[0]?.payVersion)})` : "";
+    at(employee.joiningDate).description.push(`Joined on ${employee.joiningDate}${where ? ` in ${where}` : ""}${ctc}${version}`);
+  }
 
   const stays = stateHistoryOf(employee);
   stays.forEach((stay, i) => {
@@ -92,6 +104,9 @@ function changesByMonth(employee) {
     const before = stays[i - 1];
     at(stay.from).state.push(
       `${join(before.state, before.city)} -> ${join(stay.state, stay.city)} (${stay.from})${note(stay.remark)}`
+    );
+    at(stay.from).description.push(
+      `Location changed ${join(before.state, before.city) || "-"} -> ${join(stay.state, stay.city) || "-"} from ${stay.from}${note(stay.remark)}`
     );
   });
 
@@ -106,6 +121,12 @@ function changesByMonth(employee) {
     if (before.reportingManager !== spell.reportingManager)
       parts.push(`Manager ${before.reportingManager || "-"} -> ${spell.reportingManager || "-"}`);
     at(spell.from).department.push(`${parts.join(", ") || "Transfer"} (${spell.from})${note(spell.remark)}`);
+    const said = [];
+    if (place(before) !== place(spell)) said.push(`Department changed ${place(before) || "-"} -> ${place(spell) || "-"}`);
+    if (before.designation !== spell.designation) said.push(`designation ${before.designation || "-"} -> ${spell.designation || "-"}`);
+    if (before.reportingManager !== spell.reportingManager) said.push(`manager ${before.reportingManager || "-"} -> ${spell.reportingManager || "-"}`);
+    const line = said.join(", ") || "Transferred";
+    at(spell.from).description.push(`${line[0].toUpperCase()}${line.slice(1)} from ${spell.from}${note(spell.remark)}`);
   });
 
   const pays = payHistoryOf(employee);
@@ -117,8 +138,25 @@ function changesByMonth(employee) {
     if (before.pfApplicable !== pay.pfApplicable) parts.push(`PF ${yesNo(before.pfApplicable) || "-"} -> ${yesNo(pay.pfApplicable) || "-"}`);
     if (before.esicApplicable !== pay.esicApplicable)
       parts.push(`ESIC ${yesNo(before.esicApplicable) || "-"} -> ${yesNo(pay.esicApplicable) || "-"}`);
+    const oldVersion = resolvePayVersion(before.payVersion);
+    const newVersion = resolvePayVersion(pay.payVersion);
+    if (oldVersion !== newVersion) parts.push(`Pay version v${oldVersion} -> v${newVersion}`);
     if (!parts.length) return;
     const month = at(pay.from);
+    if (seeSalary) {
+      const said = [];
+      if (before.monthlyCtc !== pay.monthlyCtc) {
+        const rise = (pay.monthlyCtc || 0) - (before.monthlyCtc || 0);
+        const pct = before.monthlyCtc ? ` (${rise >= 0 ? "+" : ""}${Math.round((rise / before.monthlyCtc) * 1000) / 10}%)` : "";
+        said.push(`Salary ${rise >= 0 ? "increased" : "reduced"} ${inr(before.monthlyCtc)} -> ${inr(pay.monthlyCtc)}${pct}`);
+      }
+      if (before.pfApplicable !== pay.pfApplicable) said.push(`PF ${pay.pfApplicable ? "started" : "stopped"}`);
+      if (before.esicApplicable !== pay.esicApplicable) said.push(`ESIC ${pay.esicApplicable ? "started" : "stopped"}`);
+      if (oldVersion !== newVersion) said.push(`pay version v${oldVersion} -> v${newVersion}`);
+      const line = said.join(", ");
+      const by = pay.kind === "department" ? " (with department change)" : "";
+      month.description.push(`${line[0].toUpperCase()}${line.slice(1)} from ${pay.from}${by}${note(pay.remark)}`);
+    }
     const by = pay.kind === "department" ? "with department transfer" : "salary revision";
     month.salary.push(`${parts.join(", ")} (${by}, ${pay.from})${note(pay.remark)}`);
     if (before.monthlyCtc !== pay.monthlyCtc) {
@@ -128,11 +166,15 @@ function changesByMonth(employee) {
   });
 
   for (const exit of employee.exits || []) {
-    if (exit.lastWorkingDay)
-      at(exit.lastWorkingDay).exit.push(
-        `${exit.exitType || "Left"}, last working day ${exit.lastWorkingDay}${note(exit.reason)}`
-      );
-    if (exit.rejoinDate) at(exit.rejoinDate).joined.push(`Rejoined (${exit.rejoinDate})${note(exit.rejoinRemark)}`);
+    if (exit.lastWorkingDay) {
+      const line = `${exit.exitType || "Left"}, last working day ${exit.lastWorkingDay}${note(exit.reason)}`;
+      at(exit.lastWorkingDay).exit.push(line);
+      at(exit.lastWorkingDay).description.push(line);
+    }
+    if (exit.rejoinDate) {
+      at(exit.rejoinDate).joined.push(`Rejoined (${exit.rejoinDate})${note(exit.rejoinRemark)}`);
+      at(exit.rejoinDate).description.push(`Rejoined on ${exit.rejoinDate}${note(exit.rejoinRemark)}`);
+    }
   }
   return changes;
 }
@@ -155,7 +197,7 @@ export async function exportEmployeeFullHistory(employee, { seeSalary }) {
   await loadXlsx();
   const months = monthsWorked(employee, Infinity); // [[year, month, day]], oldest first
   const keys = months.map(([y, m]) => `${y}-${String(m).padStart(2, "0")}`);
-  const changes = changesByMonth(employee);
+  const changes = changesByMonth(employee, seeSalary);
 
   let pay = {};
   let paySheetError = "";
@@ -169,6 +211,7 @@ export async function exportEmployeeFullHistory(employee, { seeSalary }) {
 
   const header = [
     "Month",
+    "Description",
     ...PERSON.map(([h]) => h),
     "State",
     "City",
@@ -179,7 +222,7 @@ export async function exportEmployeeFullHistory(employee, { seeSalary }) {
     "PF applicable",
     "ESIC applicable"
   ];
-  const widths = [10, ...PERSON.map(([, , w]) => w), 13, 12, 28, 16, 18, 18, 9, 9];
+  const widths = [10, 60, ...PERSON.map(([, , w]) => w), 13, 12, 28, 16, 18, 18, 9, 9];
   if (seeSalary) {
     header.push(
       "Monthly CTC",
@@ -217,8 +260,10 @@ export async function exportEmployeeFullHistory(employee, { seeSalary }) {
   const person = PERSON.map(([, value]) => value(employee) ?? "");
   const rows = months.map(([year, month, day], i) => {
     const s = salaryOn(employee, day);
+    const c = changes[keys[i]] || EMPTY();
     const row = [
       `${MONTHS[month - 1]} ${year}`,
+      c.description.join(". "),
       ...person,
       s.state,
       s.city,
@@ -254,7 +299,6 @@ export async function exportEmployeeFullHistory(employee, { seeSalary }) {
         money(paid?.netAmount)
       );
     }
-    const c = changes[keys[i]] || { joined: [], state: [], department: [], salary: [], exit: [] };
     row.push(c.joined.join("; "), c.state.join("; "), c.department.join("; "));
     if (seeSalary) {
       const rise = c.oldCtc != null && c.newCtc != null ? c.newCtc - c.oldCtc : "";

@@ -20,6 +20,7 @@ const BulkIncrement = pageCode(() => import("./pages/BulkIncrement"));
 const BulkDepartmentChange = pageCode(() => import("./pages/BulkDepartmentChange"));
 const BulkStateChange = pageCode(() => import("./pages/BulkStateChange"));
 const BulkShift = pageCode(() => import("./pages/BulkShift"));
+const AppLogins = pageCode(() => import("./pages/AppLogins"));
 const Attendance = pageCode(() => import("./pages/Attendance"));
 const Dashboard = pageCode(() => import("./pages/Dashboard"));
 const Departments = pageCode(() => import("./pages/Departments"));
@@ -53,6 +54,7 @@ const PAGES = {
   bulkDepartmentChange: BulkDepartmentChange,
   bulkStateChange: BulkStateChange,
   bulkShift: BulkShift, // Employees > Shift: shift list + assign shift
+  appLogins: AppLogins, // Employees > App logins: employee app usernames / passwords
   departments: Departments,
   reportingChart: ReportingChart,
   paySheet1: () => <PaySheets sheetKey="paySheet1" />,
@@ -100,6 +102,7 @@ const PAGE_PERMISSION = {
   bulkIncrement: "employees.transfer",
   bulkDepartmentChange: "employees.transfer",
   bulkStateChange: "employees.transfer",
+  appLogins: "employees.add",
   bulkShift: "employees.view", // changing shifts needs employees.add (checked on the page and server)
   departments: "departments.view",
   reportingChart: "employees.view",

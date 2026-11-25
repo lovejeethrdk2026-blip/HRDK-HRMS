@@ -1,6 +1,6 @@
 import { useState } from "react";
 import api from "../api/axios";
-import { salaryStructure } from "@salary";
+import { firstPayVersion, payVersionIds, salaryStructure } from "@salary";
 import { rupees } from "./SalarySplit";
 
 // An Employees card's Salary revision form: a new monthly CTC from a date,
@@ -19,6 +19,8 @@ export function SalaryRevisionForm({ employee, onDone, onCancel }) {
   const [monthlyCtc, setMonthlyCtc] = useState("");
   const [effectiveDate, setEffectiveDate] = useState("");
   const [remark, setRemark] = useState("");
+  // Pay version of the new pay: the one they are on, unless HR picks another.
+  const [payVersion, setPayVersion] = useState(employee.payVersion || firstPayVersion());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -31,7 +33,8 @@ export function SalaryRevisionForm({ employee, onDone, onCancel }) {
           monthlyCtc: ctc,
           state: employee.state,
           pfApplicable: below || employee.pfApplicable,
-          esicApplicable: below || employee.esicApplicable
+          esicApplicable: below || employee.esicApplicable,
+          payVersion
         })
       : null;
   const diff = preview ? preview.inHand - (employee.salary?.inHand ?? 0) : 0;
@@ -48,7 +51,8 @@ export function SalaryRevisionForm({ employee, onDone, onCancel }) {
       const { data } = await api.post(`/employees/${encodeURIComponent(employee.employeeId)}/salary-revision`, {
         monthlyCtc,
         effectiveDate: fromDateInput(effectiveDate),
-        remark
+        remark,
+        payVersion
       });
       onDone(data);
     } catch (err) {
@@ -104,6 +108,18 @@ export function SalaryRevisionForm({ employee, onDone, onCancel }) {
             onChange={(e) => setRemark(e.target.value)}
           />
         </label>
+        {payVersionIds().length > 0 && (
+        <label className="detail-row detail-row-edit">
+          <span className="detail-label">Pay version</span>
+          <select className="detail-input" value={payVersion} onChange={(e) => setPayVersion(e.target.value)}>
+            {[...payVersionIds()].reverse().map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </label>
+        )}
         <div className="detail-row">
           <span className="detail-label">New in hand</span>
           <span className="sr-preview">

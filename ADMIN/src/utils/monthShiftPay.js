@@ -29,7 +29,7 @@
 //   earnings add to, deductions cut, the net pay.
 
 import { totalWorking, fullDaySeconds, lateSeconds, earlyOutSeconds } from "./attendanceStats";
-import { employeeOn, isWorkingOn, salaryForMonth, payrollSettings, applyComponents, monthPay, settingVariables } from "@salary";
+import { employeeOn, isWorkingOn, salaryForMonth, payrollSettingsOf, applyComponents, monthPay, settingVariables, payVersionIds, resolvePayVersion } from "@salary";
 
 // The month's figures the month pay formulas and Pay Formulas use
 // (server/utils/payFormula.js PAY_VARIABLES), unrounded.
@@ -136,7 +136,13 @@ export function monthShiftPay({ rows, employees, month, holidays = [], fullShare
   const daysInMonth = new Date(Date.UTC(year, monthNo, 0)).getUTCDate();
   const lastDayIso = `${yyyy}-${mm}-${pad(daysInMonth)}`;
   const today = todayNumber();
-  const components = (payrollSettings().formulas || []).filter((c) => c.active !== false);
+  // HR's own components per pay version (each employee uses their version's).
+  const componentsOf = (version) => (payrollSettingsOf(version).formulas || []).filter((c) => c.active !== false);
+  // Columns on the page: every component code any version has, latest first.
+  const components = [];
+  for (const version of [...payVersionIds()].reverse().concat("")) {
+    for (const c of componentsOf(version)) if (!components.some((x) => x.code === c.code)) components.push(c);
+  }
 
   // "ID|DD-MM-YYYY" -> register row
   const byDay = new Map();
@@ -202,7 +208,8 @@ export function monthShiftPay({ rows, employees, month, holidays = [], fullShare
     const fullDayHours = fullDaySeconds({ shift }) / 3600 || 8;
     const split = salaryForMonth(employee, year, monthNo);
     const inputs = monthInputs({ totals, split, pay, monthNo, daysInMonth, employee, monthlyCtc, fullDayHours });
-    const month = monthPay(inputs); // month pay formulas
+    const payVersion = resolvePayVersion(pay.payVersion); // the month's pay version
+    const month = monthPay(inputs, payVersion); // month pay formulas
     const m = (code) => Number(month.values[code]) || 0;
 
     const row = {
@@ -218,6 +225,7 @@ export function monthShiftPay({ rows, employees, month, holidays = [], fullShare
       weeklyOff,
       fullDayHours: round2(fullDayHours),
       monthlyCtc,
+      payVersion,
       daysCounted: counted,
       ...totals,
       paidDays: round2(totals.paidDays),
@@ -235,8 +243,8 @@ export function monthShiftPay({ rows, employees, month, holidays = [], fullShare
     };
     // Pay Formulas: HR's own components on top (none = no change). They see
     // the month pay as shown in the table (rounded).
-    const custom = applyComponents(components, {
-      ...settingVariables(payrollSettings()),
+    const custom = applyComponents(componentsOf(payVersion), {
+      ...settingVariables(payrollSettingsOf(payVersion)),
       ...inputs,
       PER_DAY: row.perDay,
       PER_HOUR: row.perHour,

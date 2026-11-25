@@ -129,3 +129,65 @@ export const setAppPassword = asyncHandler(async (req, res) => {
   await sessions().deleteMany({ employeeId: id });
   res.json({ username: id, set: true, mustChange: true, setAt: now, changedAt: null });
 });
+
+// ---------- admin (HR): App logins page ----------
+
+// A first password HR can read out: 8 letters / digits, no 0/O, 1/l/I.
+const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+const generatePassword = () => Array.from(crypto.getRandomValues(new Uint32Array(8)), (n) => CHARS[n % CHARS.length]).join("");
+
+// GET /api/employees/app-logins -> [{ username, mustChange, setAt, changedAt, pausedUntil }]
+// Every saved app password (no hashes); the page joins them to the employees.
+export const listAppLogins = asyncHandler(async (req, res) => {
+  const rows = await passwords()
+    .find({}, { projection: { hash: 0 } })
+    .toArray();
+  res.json(
+    rows.map((r) => ({
+      username: r._id,
+      mustChange: Boolean(r.mustChange),
+      setAt: r.setAt || null,
+      changedAt: r.changedAt || null,
+      pausedUntil: r.pausedUntil && r.pausedUntil > new Date() ? r.pausedUntil : null
+    }))
+  );
+});
+
+// POST /api/employees/app-logins/generate { employeeIds: [...] }
+// -> { given: [{ employeeId, name, username, password }], skipped: [{ employeeId, reason }] }
+// A new first password for each (they must choose their own at the next
+// login; logged out of the app). The passwords are in this answer only.
+export const generateAppPasswords = asyncHandler(async (req, res) => {
+  const ids = [...new Set((Array.isArray(req.body?.employeeIds) ? req.body.employeeIds : []).map(String))];
+  if (!ids.length) return res.status(400).json({ message: "Choose at least one employee" });
+  if (ids.length > 500) return res.status(400).json({ message: "At most 500 at a time" });
+  const employees = await EmployeeProfile.find({ employeeId: { $in: ids } }, { employeeId: 1, name: 1, initialsNo: 1 }).lean();
+  const byId = new Map(employees.map((e) => [e.employeeId, e]));
+  const given = [];
+  const skipped = [];
+  const now = new Date();
+  for (const employeeId of ids) {
+    const employee = byId.get(employeeId);
+    const username = String(employee?.initialsNo || "").trim();
+    if (!employee) {
+      skipped.push({ employeeId, reason: "Not found" });
+      continue;
+    }
+    if (!/^\d{1,10}$/.test(username)) {
+      skipped.push({ employeeId, reason: "No Employee ID (Matrix ID)" });
+      continue;
+    }
+    const password = generatePassword();
+    await passwords().updateOne(
+      { _id: username },
+      {
+        $set: { hash: await bcrypt.hash(password, 10), mustChange: true, setAt: now, setBy: req.session?.userId || "", failCount: 0, pausedUntil: null },
+        $unset: { changedAt: "" }
+      },
+      { upsert: true }
+    );
+    await sessions().deleteMany({ employeeId: username });
+    given.push({ employeeId, name: employee.name || "", username, password });
+  }
+  res.json({ given, skipped });
+});

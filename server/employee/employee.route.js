@@ -17,7 +17,8 @@ import {
 import { getSalarySheet } from "./salarySheet.js";
 import { MAX_DOCUMENT_BYTES, deleteDocument, getDocument, setDocumentLock, uploadDocument } from "./employeeDocuments.js";
 import { isLoggedIn } from "../middleware/auth.js";
-import { appPasswordStatus, setAppPassword } from "../portal/appPasswords.js";
+import { appPasswordStatus, generateAppPasswords, listAppLogins, setAppPassword } from "../portal/appPasswords.js";
+import { monthPayHistory } from "../portal/monthPay.js";
 import { accessFor } from "../roles/roles.controller.js";
 
 // Only a signed-in user whose role has this permission (admins always do).
@@ -39,6 +40,10 @@ router.use(isLoggedIn);
 
 // Employees page.
 router.get("/", listEmployees);
+// App logins page: every employee's app password state, and new first
+// passwords for many at once.
+router.get("/app-logins", allowed("employees.add"), listAppLogins);
+router.post("/app-logins/generate", allowed("employees.add"), express.json(), generateAppPasswords);
 // Employees page > Download salary sheet: pay by Daily Register days, ?month=YYYY-MM.
 router.get("/salary-sheet", getSalarySheet);
 // Add Employee page.
@@ -77,6 +82,8 @@ router.post(
 );
 router.get("/:employeeId/documents/:documentId", isLoggedIn, getDocument);
 router.delete("/:employeeId/documents/:documentId", isLoggedIn, deleteDocument);
+// Employees panel > Payroll history: HRMS's own month pay (not BC365).
+router.get("/:employeeId/month-pay", allowed("employees.salary"), monthPayHistory);
 // Employee app login: see / set the password HR gives (Employees panel).
 router.get("/:employeeId/app-password", allowed("employees.add"), appPasswordStatus);
 router.put("/:employeeId/app-password", allowed("employees.add"), express.json(), setAppPassword);

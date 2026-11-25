@@ -54,6 +54,21 @@ export default function Payslip() {
             {data.salaryTypes?.length ? <Text style={[type.small, { color: c.muted }]}>Paid as {data.salaryTypes.join(" and ").toLowerCase()}</Text> : null}
           </Card>
 
+          {data.days ? (
+            <Section title="Days">
+              <Card>
+                <Line label="Days in month" amount={data.days.daysInMonth} plain />
+                <Line label="Paid days" amount={data.days.paidDays} plain />
+                <Line label="Present" amount={data.days.present} plain />
+                {data.days.halfDays ? <Line label="Half days" amount={data.days.halfDays} plain /> : null}
+                <Line label="Weekly off" amount={data.days.weeklyOffs} plain />
+                {data.days.holidays ? <Line label="Holidays" amount={data.days.holidays} plain /> : null}
+                {data.days.leaveDays ? <Line label="Leave (paid)" amount={data.days.leaveDays} plain /> : null}
+                <Line label="Absent (not paid)" amount={data.days.absent} plain />
+              </Card>
+            </Section>
+          ) : null}
+
           <Section title="Earnings">
             <Card>
               {data.earnings.map((r) => (
@@ -83,14 +98,15 @@ export default function Payslip() {
   );
 }
 
-function Line({ label, amount, minus }) {
+// plain: a count (days), not rupees.
+function Line({ label, amount, minus, plain }) {
   const c = useTheme();
   return (
     <View style={styles.line}>
       <Text style={[type.body, { color: c.text }]}>{label}</Text>
       <Text style={[type.body, type.figure, { color: minus ? c.bad : c.text, fontWeight: "600" }]}>
         {minus ? "−" : ""}
-        {rupees(amount)}
+        {plain ? String(Math.round((Number(amount) || 0) * 100) / 100) : rupees(amount)}
       </Text>
     </View>
   );

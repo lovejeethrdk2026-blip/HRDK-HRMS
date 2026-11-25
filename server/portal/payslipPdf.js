@@ -2,12 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { payVersionIds } from "../utils/salaryFormulas.js";
 
 // Salary slip PDF for the employee app, laid out like the BC365 pay slip:
 // company header, employee details, Earnings | Deductions, gross / net and net
-// pay in words. The money comes from Pay Sheet 1 (BC365); the details from the
-// employee's HRMS profile. BC365's Pay Sheet rows hold amounts only, so days
-// worked and the tax working are not on this slip.
+// pay in words. The money is the full monthly salary from Joining & pay
+// (portal/monthPay.js, the employee's pay version); the details from the
+// employee's profile. No days or tax working on this slip.
 
 const LOGO = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "hrdk-logo.png");
 const COMPANY = "HRDK JEWEL CRAFT LIMITED";
@@ -89,6 +90,19 @@ export async function buildPayslipPdf(slip, employee) {
     ["ESIC Number", employee?.esicNo, "Bank Name", employee?.bank?.bankName],
     ["Bank Account No.", employee?.bank?.accountNo, "Total Days In Month", String(daysInMonth)]
   ];
+  // Pay version only once there is more than one (until v0.2 everyone is on v0.1).
+  const version = payVersionIds().length > 1 && slip.payVersion ? `v${slip.payVersion}` : "";
+  if (slip.monthlyCtc) details.push(["Monthly CTC", money(slip.monthlyCtc), version ? "Pay version" : "", version]);
+  // Days, when a payslip carries them.
+  const d = slip.days;
+  if (d) {
+    const n = (v) => String(Math.round((Number(v) || 0) * 100) / 100);
+    details.push(
+      ["Days Paid", n(d.paidDays), "Present Days", n(d.present + (d.halfDays || 0) / 2)],
+      ["Absent (no pay)", n(d.absent), "Weekly Off / Holidays", `${n(d.weeklyOffs)} / ${n(d.holidays)}`],
+      ["Leave (paid)", n(d.leaveDays), "Pay version", slip.payVersion ? `v${slip.payVersion}` : ""]
+    );
+  }
   const colW = (R - L) / 4;
   const rowH = 17;
   let y = 505;

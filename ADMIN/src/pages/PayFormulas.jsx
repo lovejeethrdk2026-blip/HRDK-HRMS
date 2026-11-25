@@ -3,6 +3,7 @@ import api from "../api/axios";
 import { useConfirm } from "../components/ConfirmDialog";
 import Loader from "../components/Loader";
 import PayrollSettings from "./PayrollSettings";
+import PayVersions from "../components/PayVersions";
 import {
   PAY_VARIABLES,
   PAY_FUNCTIONS,
@@ -476,6 +477,8 @@ export default function PayFormulas() {
           </button>
         </div>
       </div>
+
+      <PayVersions />
 
       <div className="pf-tabs" role="tablist" aria-label="Formula lists">
         {[

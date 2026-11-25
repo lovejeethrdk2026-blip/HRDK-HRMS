@@ -5,7 +5,7 @@ import SalarySplit, { rupees } from "../components/SalarySplit";
 import { TransferForm } from "../components/StateTransfer";
 import { DepartmentTransferForm } from "../components/DepartmentTransfer";
 import { SalaryRevisionForm } from "../components/SalaryRevision";
-import { DepartmentChanges, PayrollHistory, SalaryChanges, StateChanges } from "../components/ChangeHistory";
+import { Bc365PayHistory, DepartmentChanges, PayrollHistory, SalaryChanges, StateChanges } from "../components/ChangeHistory";
 import { ExitForm, ExitPanel } from "../components/EmployeeExit";
 import DocumentViewer, { documentUrl } from "../components/DocumentViewer";
 import { DOCUMENT_GROUPS, DOCUMENT_TITLES, downloadDocumentsPdf } from "../components/EmployeeDocuments";
@@ -22,7 +22,7 @@ function lastMonth() {
 import { exportEmployeeStatesToExcel, exportEmployeeToExcel, exportEmployeesToExcel } from "../utils/exportEmployees";
 import { exportEmployeeFullHistory } from "../utils/exportFullHistory";
 import { statusOf } from "../utils/employeeStatus";
-import { openExitOf, stateHistoryOf } from "@salary";
+import { firstPayVersion, openExitOf, payVersionIds, stateHistoryOf } from "@salary";
 import AddEmployee from "./AddEmployee";
 import { inMyDepartments, myDepartmentNames } from "../utils/userScope";
 
@@ -328,6 +328,7 @@ function EmployeeDetail({ employee, onEdit, onTransferred }) {
             {employee.joiningDate && <span className="emp-chip">Joined {employee.joiningDate}</span>}
             <Applicable label="PF" value={employee.pfApplicable} />
             <Applicable label="ESIC" value={employee.esicApplicable} />
+            {payVersionIds().length > 1 && <span className="emp-chip">Pay v{employee.payVersion || firstPayVersion()}</span>}
           </span>
         </span>
         {seeSalary && (
@@ -512,12 +513,11 @@ function EmployeeDetail({ employee, onEdit, onTransferred }) {
         <section className="emp-box">
           <h3 className="emp-box-title">Payroll</h3>
           <p className="emp-box-note">
-            This month's split, what was actually paid each month (from Pay Sheet 1, BC365), and every salary
+            This month's split, each month's full salary from Joining &amp; pay (with the pay version) and what BC365 actually gave, and every salary
             revision with the pay before and after.
           </p>
           <SalarySplit salary={employee.salary} />
-          <h4 className="emp-box-sub">Payroll history</h4>
-          <PayrollHistory employee={employee} />
+          <PayTabs employee={employee} />
           <h4 className="emp-box-sub">Salary revisions</h4>
           <SalaryChanges employee={employee} />
         </section>
@@ -531,6 +531,27 @@ function EmployeeDetail({ employee, onEdit, onTransferred }) {
         {can("employees.add") && <EmployeeDocsBox employee={employee} />}
       </div>
     </article>
+  );
+}
+
+// Payroll box: two tabs -- the pay HRMS works out (Daily Register days, pay
+// version) and the salary BC365 actually gave (Pay Sheet 1).
+function PayTabs({ employee }) {
+  const [tab, setTab] = useState("hrms");
+  return (
+    <>
+      <div className="segmented emp-status emp-pay-tabs" role="tablist" aria-label="Payroll">
+        {[
+          ["hrms", "Payroll history"],
+          ["bc365", "BC365 given salary"]
+        ].map(([key, label]) => (
+          <button key={key} type="button" role="tab" aria-selected={tab === key} className={tab === key ? "active" : undefined} onClick={() => setTab(key)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "hrms" ? <PayrollHistory employee={employee} /> : <Bc365PayHistory employee={employee} />}
+    </>
   );
 }
 

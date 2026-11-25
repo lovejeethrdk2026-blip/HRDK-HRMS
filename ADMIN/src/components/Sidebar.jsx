@@ -73,7 +73,9 @@ export const MENU = [
           { key: "bulkStateChange", label: "State change" },
           // The one place shifts are given, many at once (pages/BulkShift.jsx).
           // Shift list + Assign shift, two tabs on one page (pages/BulkShift.jsx).
-          { key: "bulkShift", label: "Shift" }
+          { key: "bulkShift", label: "Shift" },
+          // Employee app usernames and first passwords, many at once (pages/AppLogins.jsx).
+          { key: "appLogins", label: "App logins" }
         ]
       },
       // Department -> sub-department -> employees, from the COSEC master.

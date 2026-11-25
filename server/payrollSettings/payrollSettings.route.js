@@ -1,7 +1,14 @@
 import express from "express";
 import mongoose from "mongoose";
 import { isLoggedIn, authorize } from "../middleware/auth.js";
-import { DEFAULT_PAYROLL_SETTINGS, payrollSettings, setPayrollSettings, checkComponents, checkStage } from "../utils/salaryFormulas.js";
+import {
+  DEFAULT_PAYROLL_SETTINGS,
+  payrollSettings,
+  setPayrollSettings,
+  setPayVersions,
+  checkComponents,
+  checkStage
+} from "../utils/salaryFormulas.js";
 
 // Payroll Settings (HR / admin only): PF, ESIC, PT switches and rates, basic
 // and HRA %, bonus, minimum wages. One document; the salary formulas
@@ -12,7 +19,15 @@ import { DEFAULT_PAYROLL_SETTINGS, payrollSettings, setPayrollSettings, checkCom
 const PayrollSettings = mongoose.model(
   "PayrollSettings",
   new mongoose.Schema(
-    { key: { type: String, unique: true, default: "main" }, values: { type: Object, default: {} }, updatedBy: String },
+    {
+      key: { type: String, unique: true, default: "main" },
+      // The latest pay version's settings: what Payroll Settings / Pay Formulas edit.
+      values: { type: Object, default: {} },
+      // Every pay version, oldest first: [{ version: "0.1", values, createdAt,
+      // createdBy, note }]. The last one's values are kept equal to values.
+      versions: { type: Array, default: [] },
+      updatedBy: String
+    },
     { timestamps: true, collection: "payroll_settings" }
   )
 );
@@ -72,9 +87,49 @@ function clean(body) {
 // Loads the saved settings into the formulas (server start, mongoose waits
 // for the connection).
 export async function loadPayrollSettings() {
-  const doc = await PayrollSettings.findOne({ key: "main" }).lean();
-  setPayrollSettings(doc?.values);
+  let doc = await PayrollSettings.findOne({ key: "main" }).lean();
+  // Before pay versions: today's settings become version 0.1, so every pay
+  // worked out so far stays as it is.
+  if (!doc?.versions?.length) {
+    const first = { version: "0.1", values: doc?.values || {}, createdAt: new Date(), createdBy: "", note: "Settings in use before pay versions" };
+    await PayrollSettings.updateOne({ key: "main" }, { $set: { versions: [first] } }, { upsert: true });
+    doc = { ...(doc || {}), versions: [first] };
+  }
+  applyDoc(doc);
 }
+
+// Puts a saved document into the formulas: the latest version in use, every
+// version known.
+function applyDoc(doc) {
+  setPayrollSettings(doc?.values);
+  setPayVersions(doc?.versions || []);
+}
+
+const nextVersion = (versions) => {
+  const last = versions.at(-1)?.version || "0.0";
+  const [major, minor] = last.split(".").map(Number);
+  return `${major || 0}.${(minor || 0) + 1}`;
+};
+
+// Keeps the latest version's copy in step after values were edited.
+async function syncLatest(userId) {
+  const doc = await PayrollSettings.findOne({ key: "main" }).lean();
+  const versions = doc?.versions || [];
+  if (versions.length) {
+    versions.at(-1).values = doc.values;
+    await PayrollSettings.updateOne({ key: "main" }, { $set: { versions, updatedBy: userId } });
+  }
+  applyDoc({ ...doc, versions });
+  return { ...doc, versions };
+}
+
+// What the admin app gets: the latest settings and every version (values
+// included, so pay on an older version is shown the same everywhere).
+const answer = (doc) => ({
+  values: payrollSettings(),
+  defaults: DEFAULT_PAYROLL_SETTINGS,
+  versions: (doc?.versions || []).map(({ version, values, createdAt, note }) => ({ version, values, createdAt, note }))
+});
 loadPayrollSettings().catch((error) => console.error("Payroll settings not loaded:", error.message));
 
 const router = express.Router();
@@ -82,8 +137,67 @@ router.use(isLoggedIn);
 
 // GET /api/payroll-settings -> { values, defaults }. Every signed-in user: the
 // admin app needs them to show salary splits the same way the server does.
-router.get("/", (req, res) => {
-  res.json({ values: payrollSettings(), defaults: DEFAULT_PAYROLL_SETTINGS });
+router.get("/", async (req, res, next) => {
+  try {
+    res.json(answer(await PayrollSettings.findOne({ key: "main" }).lean()));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/payroll-settings/versions { note } -> answer. Admin (HR) only.
+// A new pay version: a copy of the latest, which then becomes the one edited.
+// Older versions are never edited again, so pay worked out with them stays.
+router.post("/versions", authorize("admin"), express.json(), async (req, res, next) => {
+  try {
+    const doc = await PayrollSettings.findOne({ key: "main" }).lean();
+    const versions = doc?.versions || [];
+    const version = nextVersion(versions);
+    versions.push({
+      version,
+      values: structuredClone(doc?.values || {}),
+      createdAt: new Date(),
+      createdBy: req.session.userId || "",
+      note: String(req.body?.note ?? "").trim().slice(0, 200)
+    });
+    await PayrollSettings.updateOne({ key: "main" }, { $set: { versions, updatedBy: req.session.userId } }, { upsert: true });
+    applyDoc({ ...doc, versions });
+    res.status(201).json(answer({ ...doc, versions }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/payroll-settings/versions/:version -> answer. Admin (HR) only.
+// Takes back a version made by mistake: only the latest, never the first, and
+// only while no employee's pay uses it. The one before becomes the latest
+// (editable) again, with its own settings.
+router.delete("/versions/:version", authorize("admin"), async (req, res, next) => {
+  try {
+    const doc = await PayrollSettings.findOne({ key: "main" }).lean();
+    const versions = doc?.versions || [];
+    const version = String(req.params.version);
+    const latest = versions.at(-1);
+    if (!latest || latest.version !== version) {
+      return res.status(400).json({ message: `Only the latest version (${latest?.version || "none"}) can be deleted` });
+    }
+    if (versions.length < 2) return res.status(400).json({ message: "The first version can't be deleted" });
+    const used = await mongoose.connection
+      .collection("employee_profiles")
+      .countDocuments({ $or: [{ payVersion: version }, { "payHistory.payVersion": version }] });
+    if (used) {
+      return res.status(400).json({
+        message: `${used} employee${used === 1 ? " is" : "s are"} on version ${version}. Move them to another version (Edit details) first.`
+      });
+    }
+    versions.pop();
+    const values = versions.at(-1).values || {};
+    await PayrollSettings.updateOne({ key: "main" }, { $set: { versions, values, updatedBy: req.session.userId } });
+    applyDoc({ ...doc, versions, values });
+    res.json(answer({ ...doc, versions }));
+  } catch (err) {
+    next(err);
+  }
 });
 
 // PUT /api/payroll-settings { ...values } -> { values }. Admin (HR) only.
@@ -100,8 +214,7 @@ router.put("/", authorize("admin"), async (req, res, next) => {
       { $set: { values, updatedBy: req.session.userId } },
       { upsert: true }
     );
-    setPayrollSettings(values);
-    res.json({ values: payrollSettings() });
+    res.json(answer(await syncLatest(req.session.userId)));
   } catch (err) {
     next(err);
   }
@@ -127,10 +240,7 @@ router.put("/formulas", authorize("admin"), async (req, res, next) => {
     }
     if (!Object.keys(set).length) return res.status(400).json({ message: "Nothing to save" });
     await PayrollSettings.updateOne({ key: "main" }, { $set: { ...set, updatedBy: req.session.userId } }, { upsert: true });
-    const next = { ...payrollSettings() };
-    for (const [path, value] of Object.entries(set)) next[path.slice("values.".length)] = value;
-    setPayrollSettings(next);
-    res.json({ values: payrollSettings() });
+    res.json(answer(await syncLatest(req.session.userId)));
   } catch (err) {
     next(err);
   }

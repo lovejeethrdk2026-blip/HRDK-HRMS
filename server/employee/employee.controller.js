@@ -6,7 +6,9 @@ import {
   ageOn,
   familyEsicCovered,
   openExitOf,
+  latestPayVersion,
   payHistoryOf,
+  payVersionIds,
   salaryStructure,
   sortableDate,
   stateHistoryOf
@@ -118,7 +120,9 @@ function setPath(object, path, value) {
 
 // Checks the Add Employee form's record and turns it into what gets stored,
 // salary split included: { record } or { error } (the message for a 400).
-function buildRecord(body) {
+// defaultVersion: the pay version when the form sends none (new employee:
+// the latest; edit: the one they are on).
+function buildRecord(body, defaultVersion = "") {
   const missing = Object.keys(REQUIRED).find((path) => !String(getPath(body, path) ?? "").trim());
   if (missing) return { error: `${REQUIRED[missing]} is required` };
   const employeeId = String(body.employeeId ?? "").trim();
@@ -185,6 +189,11 @@ function buildRecord(body) {
     if (error) return { error };
     record.pfNominees = nominees;
   }
+
+  // Pay version (Pay Formulas): the split below is worked out with it.
+  const payVersion = String(body.payVersion ?? "").trim();
+  if (payVersion && !payVersionIds().includes(payVersion)) return { error: `Pay version ${payVersion} does not exist` };
+  record.payVersion = payVersion || defaultVersion;
 
   record.salary = salaryStructure(record);
   return { record };
@@ -270,7 +279,7 @@ const bodyOf = (req) => (req.body && typeof req.body === "object" ? req.body : {
 
 // POST /api/employees  Body: the Add Employee form's record.
 async function createEmployee(req, res) {
-  const { record, error } = buildRecord(bodyOf(req));
+  const { record, error } = buildRecord(bodyOf(req), latestPayVersion());
   if (error) return res.status(400).json({ message: error });
   const { employeeId } = record;
 
@@ -298,11 +307,10 @@ async function createEmployee(req, res) {
 // Employee form sends it. The employee code itself stays as it was.
 async function updateEmployee(req, res) {
   const employeeId = req.params.employeeId;
-  const { record, error } = buildRecord({ ...bodyOf(req), employeeId });
-  if (error) return res.status(400).json({ message: error });
-
   const employee = await EmployeeProfile.findOne({ employeeId });
   if (!employee) return res.status(404).json({ message: `Employee ${employeeId} not found` });
+  const { record, error } = buildRecord({ ...bodyOf(req), employeeId }, employee.payVersion || "");
+  if (error) return res.status(400).json({ message: error });
 
   // The form's State corrects the current stay (a move is a Transfer), and
   // its joining date starts the first.
@@ -335,7 +343,8 @@ async function updateEmployee(req, res) {
   Object.assign(pays.at(-1), {
     monthlyCtc: record.monthlyCtc,
     pfApplicable: record.pfApplicable,
-    esicApplicable: record.esicApplicable
+    esicApplicable: record.esicApplicable,
+    payVersion: record.payVersion
   });
   pays[0].from = record.joiningDate;
   if (pays.length > 1 && sortableDate(record.joiningDate) >= sortableDate(pays[1].from)) {
@@ -386,7 +395,7 @@ function parseCtc(text) {
 // pay the day before, opens the new one (kind "revision" or "department") and
 // sets CTC, yearly CTC (12 times), PF / ESIC and the split. Returns an error
 // message, or "" once done (the caller saves).
-function startPay(employee, { ctc, effectiveDate, kind, remark }) {
+function startPay(employee, { ctc, effectiveDate, kind, remark, payVersion }) {
   const pays = payHistoryOf(employee.toObject()).map((pay) => ({ ...pay }));
   const current = pays.at(-1);
   if (ctc === current.monthlyCtc) return `${employee.name} is already on ${ctc} a month`;
@@ -401,7 +410,9 @@ function startPay(employee, { ctc, effectiveDate, kind, remark }) {
   const pay = {
     monthlyCtc: ctc,
     pfApplicable: below || Boolean(current.pfApplicable),
-    esicApplicable: below || Boolean(current.esicApplicable)
+    esicApplicable: below || Boolean(current.esicApplicable),
+    // A revision may move the employee to another pay version; else the same one.
+    payVersion: payVersion || current.payVersion || employee.payVersion || ""
   };
   current.to = dayBefore(effectiveDate);
   pays.push({ ...pay, kind, from: effectiveDate, to: "", remark });
@@ -416,9 +427,10 @@ function startPay(employee, { ctc, effectiveDate, kind, remark }) {
 // effectiveDate ("DD-MM-YYYY"), remark }. A raise (or cut) with no transfer.
 async function reviseSalary(req, res) {
   const body = bodyOf(req);
-  const [ctcText, effectiveDate, remark] = ["monthlyCtc", "effectiveDate", "remark"].map((key) =>
+  const [ctcText, effectiveDate, remark, payVersion] = ["monthlyCtc", "effectiveDate", "remark", "payVersion"].map((key) =>
     String(body[key] ?? "").trim()
   );
+  if (payVersion && !payVersionIds().includes(payVersion)) return res.status(400).json({ message: `Pay version ${payVersion} does not exist` });
   const { ctc, error } = parseCtc(ctcText);
   if (error) return res.status(400).json({ message: error });
   if (ctc == null) return res.status(400).json({ message: "New monthly CTC is required" });
@@ -430,7 +442,7 @@ async function reviseSalary(req, res) {
   if (!employee) return res.status(404).json({ message: `Employee ${req.params.employeeId} not found` });
   if (leftMessage(employee)) return res.status(400).json({ message: leftMessage(employee) });
 
-  const problem = startPay(employee, { ctc, effectiveDate, kind: "revision", remark });
+  const problem = startPay(employee, { ctc, effectiveDate, kind: "revision", remark, payVersion });
   if (problem) return res.status(400).json({ message: problem });
   await employee.save();
   res.json(employee.toObject());

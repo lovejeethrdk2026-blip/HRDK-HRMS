@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import {
   FULL_DAY_HOURS,
   GRACE_MINUTES,
@@ -71,6 +71,7 @@ export default function AttendanceTable({
   register = false,
   status = false
 }) {
+  const [allOf, setAllOf] = useState(null); // the row whose every punch is shown in a popup
   if (!records.length) {
     return <p className="state-panel">No attendance records found.</p>;
   }
@@ -511,7 +512,13 @@ export default function AttendanceTable({
                 })}
                 {hasMore && (
                   <td className="col-more">
-                    {extraPunches(doc) ? `+${extraPunches(doc)} punches` : "–"}
+                    {extraPunches(doc) ? (
+                      <button type="button" className="link-btn" onClick={() => setAllOf(doc)} title="Show every punch of this day">
+                        +{extraPunches(doc)} punches
+                      </button>
+                    ) : (
+                      "–"
+                    )}
                   </td>
                 )}
                 {!register && (
@@ -550,6 +557,72 @@ export default function AttendanceTable({
           })}
         </tbody>
       </table>
+      {allOf && <AllPunchesDialog doc={allOf} machine={register && directionKnown(allOf)} onClose={() => setAllOf(null)} />}
+    </div>
+  );
+}
+
+// "09:14:05" -> seconds, null when not a time.
+const secondsOf = (time) => {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(String(time || ""));
+  return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3] || 0) : null;
+};
+const gapText = (seconds) => `${Math.floor(seconds / 3600)}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")}`;
+
+// Every punch of one day, pair by pair (the table shows only the first ones):
+// in time, out time, time inside, and time outside until the next in.
+function AllPunchesDialog({ doc, machine, onClose }) {
+  const pairs = pairsOf(doc);
+  const inLabel = machine ? "ENTRY" : "IN";
+  const outLabel = machine ? "EXIT" : "OUT";
+  return (
+    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal-card ap-card" role="dialog" aria-label="All punches">
+        <div className="ap-head">
+          <div>
+            <h3 className="card-title">
+              All punches: {doc.NAME || ""} ({doc.ID})
+            </h3>
+            <p className="ap-sub">
+              {doc.Date} · {punchCount(doc)} punches · {pairs.length} pairs · total working {totalWorkingText(doc) || "–"}
+            </p>
+          </div>
+          <button type="button" className="btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <div className="table-scroll ap-scroll">
+          <table className="att-table ap-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>{inLabel}</th>
+                <th>{outLabel}</th>
+                <th>Inside</th>
+                <th>Outside till next {inLabel}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pairs.map((pair, i) => {
+                const a = secondsOf(pair.IN);
+                const b = secondsOf(pair.OUT);
+                const next = secondsOf(pairs[i + 1]?.IN);
+                return (
+                  <tr key={i}>
+                    <td className="punch-empty">{i + 1}</td>
+                    <td>{pair.IN || <span className="punch-missed">{machine ? "missed" : "–"}</span>}</td>
+                    <td>{pair.OUT || <span className="punch-missed">{machine && i < pairs.length - 1 ? "missed" : "–"}</span>}</td>
+                    <td>{a != null && b != null && b >= a ? gapText(b - a) : "–"}</td>
+                    <td className={b != null && next != null && next > b ? "hours-short" : "punch-empty"}>
+                      {b != null && next != null && next >= b ? gapText(next - b) : "–"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

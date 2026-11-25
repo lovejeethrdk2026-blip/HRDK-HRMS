@@ -1,12 +1,14 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import api from "../api/axios";
-import { setPayrollSettings } from "@salary";
+import { setPayrollSettings, setPayVersions } from "@salary";
 
-// GET /payroll-settings into the shared salary formulas (Payroll Settings page).
+// GET /payroll-settings into the shared salary formulas (Payroll Settings page),
+// with every pay version (each employee's pay is worked out with their own).
 export async function loadPayrollSettings() {
   try {
     const { data } = await api.get("/payroll-settings");
     setPayrollSettings(data.values);
+    setPayVersions(data.versions || []);
   } catch {
     /* keep the defaults */
   }
