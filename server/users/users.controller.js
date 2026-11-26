@@ -6,15 +6,35 @@ import { accessFor } from "../roles/roles.controller.js";
 import { departmentAccess, registerAccess, validateAccess } from "./userAccess.js";
 import { ONLINE_MS, clearLastSeen } from "../middleware/lastSeen.js";
 
+// Admin passwords: bcrypt cost 12 (old cost-10 hashes still log in fine).
+const HASH_COST = 12;
+// At least 8 characters with a letter and a number; "" when good.
+export function passwordProblem(password) {
+  const p = String(password ?? "");
+  if (p.length < 8) return "Password must be at least 8 characters";
+  if (p.length > 72) return "Password must be at most 72 characters";
+  if (!/[A-Za-z]/.test(p) || !/\d/.test(p)) return "Password must have letters and numbers";
+  return "";
+}
+// 500s: the details go to the server log, not to the browser.
+const serverError = (res, error) => {
+  console.error(error);
+  res.status(500).json({ message: "Something went wrong. Please try again." });
+};
+
 // REGISTER - create a new user
 export const register = async (req, res) => {
   try {
-    const { username, password, role } = req.body;
+    const username = String(req.body.username ?? "").trim();
+    const password = String(req.body.password ?? "");
+    const role = String(req.body.role ?? "");
 
     // 1. all fields are needed (admin has no department: they see everything)
     if (!username || !password || !role) {
       return res.status(400).json({ message: "Username, password and role are required" });
     }
+    const weak = passwordProblem(password);
+    if (weak) return res.status(400).json({ message: weak });
 
     // role must be "admin" or one from the Roles & Permissions page
     if (role !== "admin" && !(await Role.findOne({ name: role }))) {
@@ -42,14 +62,14 @@ export const register = async (req, res) => {
     }
 
     // 4. hash the password (never save the real password)
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, HASH_COST);
 
     // 5. save the user
     const user = await User.create({ username, password: hashedPassword, role, ...access });
 
     res.status(201).json({ message: "User registered", userId: user._id });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -73,7 +93,7 @@ export const listUsers = async (req, res) => {
       }))
     );
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -88,14 +108,19 @@ export const setupAdmin = async (req, res) => {
     req.body.role = "admin"; // the first user is always an admin
     return register(req, res);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    serverError(res, error);
   }
 };
 
 // LOGIN - check username + password, then start a session
 export const login = async (req, res) => {
   try {
-    const { username, password } = req.body;
+    // Plain text only: an object here ({"$ne": null}) must not become a query.
+    const username = String(req.body?.username ?? "").trim();
+    const password = String(req.body?.password ?? "");
+    if (!username || !password) {
+      return res.status(400).json({ message: "Invalid username or password" });
+    }
 
     // 1. find the user
     const user = await User.findOne({ username });
@@ -109,13 +134,16 @@ export const login = async (req, res) => {
       return res.status(400).json({ message: "Invalid username or password" });
     }
 
-    // 3. save the user in the session (this logs them in)
+    // 3. a brand-new session (new cookie id, so an id set before login is
+    //    worthless), then save the user in it (this logs them in)
+    await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
     req.session.userId = user._id.toString();
     req.session.role = user.role;
+    await new Promise((resolve, reject) => req.session.save((err) => (err ? reject(err) : resolve())));
 
     res.json({ message: "Login successful", username: user.username, role: user.role });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -142,7 +170,7 @@ export const logoutAll = async (req, res) => {
       res.json({ message: "Logged out from all devices", sessionsEnded: result.deletedCount });
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -155,19 +183,18 @@ export const changePassword = async (req, res) => {
     if (!oldPassword || !newPassword) {
       return res.status(400).json({ message: "Old and new password are required" });
     }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ message: "New password must be at least 6 characters" });
-    }
+    const weak = passwordProblem(newPassword);
+    if (weak) return res.status(400).json({ message: weak });
 
     // 2. old password must be right
     const user = await User.findById(req.session.userId);
-    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    const isMatch = await bcrypt.compare(String(oldPassword), user.password);
     if (!isMatch) {
       return res.status(400).json({ message: "Old password is wrong" });
     }
 
     // 3. save the new password (hashed)
-    user.password = await bcrypt.hash(newPassword, 10);
+    user.password = await bcrypt.hash(String(newPassword), HASH_COST);
     await user.save();
 
     // 4. log out the other devices, keep this one logged in
@@ -177,7 +204,7 @@ export const changePassword = async (req, res) => {
 
     res.json({ message: "Password changed" });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -187,9 +214,8 @@ export const resetPassword = async (req, res) => {
     const { newPassword } = req.body;
 
     // 1. new password is needed
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ message: "New password must be at least 6 characters" });
-    }
+    const weak = passwordProblem(newPassword);
+    if (weak) return res.status(400).json({ message: weak });
 
     // 2. find the user
     const user = await User.findById(req.params.id);
@@ -198,7 +224,7 @@ export const resetPassword = async (req, res) => {
     }
 
     // 3. save the new password (hashed)
-    user.password = await bcrypt.hash(newPassword, 10);
+    user.password = await bcrypt.hash(String(newPassword), HASH_COST);
     await user.save();
 
     // 4. log that user out everywhere, so they must login with the new password
@@ -207,7 +233,7 @@ export const resetPassword = async (req, res) => {
 
     res.json({ message: `New password set for ${user.username}` });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -276,7 +302,7 @@ export const updateUser = async (req, res) => {
 
     res.json({ message: `${user.username} updated` });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -305,7 +331,7 @@ export const deleteUser = async (req, res) => {
 
     res.json({ message: `${user.username} deleted` });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -322,6 +348,6 @@ export const getMe = async (req, res) => {
     const plain = user.toObject();
     res.json({ ...plain, departments: departmentAccess(plain), registerDepartments: registerAccess(plain), ...access });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    serverError(res, error);
   }
 };

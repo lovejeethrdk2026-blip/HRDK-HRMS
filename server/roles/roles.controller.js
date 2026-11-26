@@ -48,7 +48,7 @@ export const listRoles = async (req, res) => {
       roles: roles.map((role) => ({ ...role, users: counts[role.name] || 0 }))
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    (console.error(error), res.status(500).json({ message: "Something went wrong. Please try again." }));
   }
 };
 
@@ -72,7 +72,7 @@ export const createRole = async (req, res) => {
     const role = await Role.create({ name, label });
     res.status(201).json({ ...role.toObject(), users: 0 });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    (console.error(error), res.status(500).json({ message: "Something went wrong. Please try again." }));
   }
 };
 
@@ -108,6 +108,6 @@ export const updateRole = async (req, res) => {
     await role.save();
     res.json(role);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    (console.error(error), res.status(500).json({ message: "Something went wrong. Please try again." }));
   }
 };

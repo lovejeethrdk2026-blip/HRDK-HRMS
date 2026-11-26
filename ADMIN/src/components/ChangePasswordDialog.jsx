@@ -21,7 +21,7 @@ export default function ChangePasswordDialog({ onClose }) {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (newPassword.length < 6) return setError("New password must be at least 6 characters");
+    if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) return setError("New password: at least 8 characters, with letters and numbers");
     if (newPassword !== confirm) return setError("New passwords do not match");
 
     setSaving(true);
@@ -83,7 +83,7 @@ export default function ChangePasswordDialog({ onClose }) {
               className="dept-modal-input"
               type="password"
               autoComplete="new-password"
-              placeholder="Min 6 characters"
+              placeholder="Min 8 characters, letters + numbers"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               required

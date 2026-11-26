@@ -89,7 +89,7 @@ function AddUserDialog({ departmentOptions, registerOptions, managerOptions, rol
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (form.password.length < 6) return setError("Password must be at least 6 characters");
+    if (form.password.length < 8 || !/[A-Za-z]/.test(form.password) || !/\d/.test(form.password)) return setError("Password: at least 8 characters, with letters and numbers");
     if (form.role !== "admin" && !form.departments.length) return setError("Pick at least one department");
     setSaving(true);
     setError("");
@@ -124,7 +124,7 @@ function AddUserDialog({ departmentOptions, registerOptions, managerOptions, rol
           className="dept-modal-input"
           type="text"
           autoComplete="off"
-          placeholder="Min 6 characters — give this to the user"
+          placeholder="Min 8 characters, letters + numbers — give this to the user"
           value={form.password}
           onChange={set("password")}
           required
@@ -253,7 +253,7 @@ function ResetPasswordDialog({ user, onSaved, onClose }) {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (password.length < 6) return setError("Password must be at least 6 characters");
+    if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) return setError("Password: at least 8 characters, with letters and numbers");
     setSaving(true);
     setError("");
     try {
@@ -280,7 +280,7 @@ function ResetPasswordDialog({ user, onSaved, onClose }) {
           type="text"
           autoComplete="off"
           autoFocus
-          placeholder="Min 6 characters — give this to the user"
+          placeholder="Min 8 characters, letters + numbers — give this to the user"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required

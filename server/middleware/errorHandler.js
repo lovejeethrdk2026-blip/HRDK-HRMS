@@ -26,7 +26,8 @@ function errorHandler(error, req, res, next) {
   }
 
   console.error(`${req.method} ${req.originalUrl} failed:`, error);
-  res.status(status || 500).json({ message: error.message });
+  // Details (database names, file paths) stay in the server log.
+  res.status(status || 500).json({ message: "Something went wrong. Please try again." });
 }
 
 export { notFound, errorHandler };
