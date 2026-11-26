@@ -37,7 +37,7 @@ export default function Attendance() {
   const c = useTheme();
   const [month, setMonth] = useState(thisMonth);
   const [picked, setPicked] = useState(null);
-  const { data, error, loading, reload } = useLoad(() => getAttendance(month), [month]);
+  const { data, error, loading, reload } = useLoad(() => getAttendance(month), [month], { live: ["attendance"] });
 
   const todayIso = isoOf(new Date());
   const days = data?.days || [];

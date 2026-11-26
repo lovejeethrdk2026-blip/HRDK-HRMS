@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { setSignedOutHandler, tokens } from "../api/client";
 import { getProfile, login, logout as apiLogout } from "../api/me";
+import { connectLive, disconnectLive, useLive } from "../api/live";
 
 // Who is logged in. On start the saved login key is tried (GET /me/profile);
 // if it works the employee goes straight in, otherwise to Login.
@@ -43,6 +44,18 @@ export function AuthProvider({ children }) {
       // keep what we have; a signed-out answer goes through the handler above
     }
   }, []);
+
+  // Live refresh connection while logged in (api/live.js).
+  const who = employee?.employeeId || "";
+  useEffect(() => {
+    if (!who) return undefined;
+    connectLive();
+    return () => disconnectLive();
+  }, [who]);
+  // HR changed what the app shows, the employee's details, or their login
+  // (turned off / new password / exit): ask again; a login that no longer
+  // works sends the app back to Login.
+  useLive(["settings", "account", "profile"], refresh);
 
   return <AuthContext.Provider value={{ employee, checking, signIn, signOut, refresh }}>{children}</AuthContext.Provider>;
 }

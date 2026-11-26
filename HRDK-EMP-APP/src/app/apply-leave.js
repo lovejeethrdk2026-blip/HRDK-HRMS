@@ -60,7 +60,7 @@ function DateStepper({ title, value, onChange, min }) {
 // as "Waiting for approval".
 export default function ApplyLeave() {
   const c = useTheme();
-  const { data, error: loadError } = useLoad(getLeave, []);
+  const { data, error: loadError } = useLoad(getLeave, [], { live: ["leave"] });
   const today = isoOf(new Date());
   const [type, setType] = useState("");
   const [fromDate, setFromDate] = useState(today);

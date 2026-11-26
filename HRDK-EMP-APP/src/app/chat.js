@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getChat, sendChat } from "../api/me";
 import { Empty, ErrorText, Loading, tap } from "../ui/components";
 import { elevation, radius, space, type, useTheme } from "../ui/theme";
+import { useLive } from "../api/live";
 
 // Chat with my manager and HR: my messages on the right, theirs on the left,
 // grouped by day. New replies are fetched every few seconds while the screen
@@ -47,6 +48,8 @@ export default function Chat() {
     const timer = setInterval(load, POLL_MS);
     return () => clearInterval(timer);
   }, [load]);
+  // Live refresh: HR's reply shows at once.
+  useLive(["chat"], load);
 
   // Messages with a day heading before the first message of each day.
   const items = useMemo(() => {

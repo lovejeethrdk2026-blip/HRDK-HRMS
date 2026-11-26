@@ -70,8 +70,8 @@ export default function Me() {
   const { employee, signOut } = useAuth();
   const f = useFeatures(); // what HR lets the app show
   const [checking, setChecking] = useState(false);
-  const { data: docs, loading, reload } = useLoad(() => (f.documents ? getDocuments() : Promise.resolve([])), [f.documents]);
-  const { data: details, reload: reloadDetails } = useLoad(() => getProfileDetails().catch(() => null), []);
+  const { data: docs, loading, reload } = useLoad(() => (f.documents ? getDocuments() : Promise.resolve([])), [f.documents], { live: ["profile"] });
+  const { data: details, reload: reloadDetails } = useLoad(() => getProfileDetails().catch(() => null), [], { live: ["profile"] });
   const missing = details ? details.missingFields.length + details.missingDocuments.length : 0;
   const required = details?.required || 0;
   const complete = required ? Math.max(0, (required - missing) / required) : 0;

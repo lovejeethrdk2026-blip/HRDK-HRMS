@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
+import { useLive } from "../api/live";
 
 // Runs an API call on open; reload() for pull-to-refresh or after a change.
-export function useLoad(fn, deps = []) {
+// live: kinds of change that reload it by themselves (api/live.js), quietly,
+// without the loading spinner, e.g. useLoad(getLeave, [], { live: ["leave"] }).
+export function useLoad(fn, deps = [], { live = [] } = {}) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
+  const reload = useCallback(async (quiet = false) => {
+    if (quiet !== true) setLoading(true);
     try {
       setData(await fn());
       setError("");
@@ -22,6 +25,8 @@ export function useLoad(fn, deps = []) {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  useLive(live, () => reload(true));
 
   return { data, error, loading, reload };
 }

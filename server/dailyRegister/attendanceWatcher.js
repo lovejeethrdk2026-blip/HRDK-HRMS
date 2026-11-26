@@ -1,6 +1,7 @@
 import Attendance from "./models/Attendance.js";
 import { applyAttendanceChange, clearAttendanceCache } from "./attendanceCache.js";
 import { notify } from "../live/live.js";
+import { notifyEmployee } from "../live/appLive.js";
 
 const PAIR_KEY = /^pair(\d+)$/;
 
@@ -62,6 +63,8 @@ function startAttendanceWatcher() {
     // Open Daily Register / Dashboard pages reload (a few seconds later, once
     // for a whole burst of sync writes).
     notify("attendance");
+    // ...and that employee's phone (employee app Home / Attendance).
+    if (change.fullDocument?.ID) notifyEmployee(change.fullDocument.ID, "attendance");
     if (change.operationType !== "delete") logIfChanged(change.fullDocument);
   });
 

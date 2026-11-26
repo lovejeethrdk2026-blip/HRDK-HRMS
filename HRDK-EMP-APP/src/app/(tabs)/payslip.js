@@ -11,7 +11,7 @@ import { radius, space, type, useTheme } from "../../ui/theme";
 // the month before), a bar per month to see the trend, and every payslip.
 export default function Salary() {
   const c = useTheme();
-  const { data, error, loading, reload } = useLoad(getPayslips, []);
+  const { data, error, loading, reload } = useLoad(getPayslips, [], { live: ["payslip"] });
   const slips = (data || []).filter((p) => p.released); // newest first
   const [focus, setFocus] = useState(null);
   const latest = slips[0];

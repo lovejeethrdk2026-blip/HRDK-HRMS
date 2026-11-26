@@ -12,7 +12,7 @@ import { radius, space, type, useTheme } from "../../ui/theme";
 export default function Payslip() {
   const c = useTheme();
   const { month } = useLocalSearchParams();
-  const { data, error, loading } = useLoad(() => getPayslip(month), [month]);
+  const { data, error, loading } = useLoad(() => getPayslip(month), [month], { live: ["payslip"] });
   const kept = data && data.totalEarnings ? data.net / data.totalEarnings : 1;
   const [opening, setOpening] = useState(false);
 

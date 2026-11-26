@@ -26,7 +26,7 @@ const TYPE_TONE = { CL: "brand", SL: "good", PL: "gold" };
 export default function Leave() {
   const c = useTheme();
   const { leaveApply } = useFeatures(); // HR can switch applying off
-  const { data, error, loading, reload } = useLoad(getLeave, []);
+  const { data, error, loading, reload } = useLoad(getLeave, [], { live: ["leave"] });
 
   // Back from Apply leave: show the new request.
   useFocusEffect(

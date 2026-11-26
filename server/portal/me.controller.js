@@ -86,6 +86,16 @@ async function employeeFor(id) {
   };
 }
 
+// Login key -> the employee's ID, or "" (expired, logged out, login turned
+// off, left the company). For the app's live-refresh socket (live/live.js).
+export async function employeeOfToken(token) {
+  if (!token) return "";
+  const session = await sessions().findOne({ _id: hash(String(token)) });
+  if (!session || session.expiresAt < new Date()) return "";
+  if (await loginBlock(session.employeeId)) return "";
+  return session.employeeId;
+}
+
 // Bearer token -> req.employeeId, or 401.
 export const requireEmployee = handle(async (req, res, next) => {
   const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");

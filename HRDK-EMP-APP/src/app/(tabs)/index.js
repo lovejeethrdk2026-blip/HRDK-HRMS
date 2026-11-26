@@ -75,7 +75,7 @@ export default function Home() {
       f.chat ? getChatUnread().catch(() => ({ unread: 0 })) : { unread: 0 }
     ]);
     return { days: att.flatMap((a) => a.days), shift: att[att.length - 1]?.shift || null, leave, payslips, profile, unread: chat.unread };
-  }, [todayIso, f.attendance, f.leave, f.salary, f.chat]);
+  }, [todayIso, f.attendance, f.leave, f.salary, f.chat], { live: ["attendance", "leave", "chat", "payslip"] });
 
   const byDate = new Map((data?.days || []).map((d) => [d.date, d]));
   const day = byDate.get(todayIso);

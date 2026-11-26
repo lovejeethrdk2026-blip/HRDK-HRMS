@@ -1,5 +1,6 @@
 import { Server } from "socket.io";
 import sessionMiddleware from "../config/session.js";
+import { appSaves, startAppLive } from "./appLive.js";
 
 // Live refresh for the admin app (Socket.IO). The server only says WHAT kind
 // of data changed ("attendance", "leave", ...), never the data itself; each
@@ -14,6 +15,10 @@ import sessionMiddleware from "../config/session.js";
 //
 // Only logged-in admin users may connect: the handshake carries the same
 // session cookie as the API.
+//
+// The employee app connects to its own channel ("/app", appLive.js) with its
+// login key and hears only about its own employee (or about everyone, e.g. a
+// new holiday).
 
 let io = null;
 
@@ -42,6 +47,7 @@ export function startLive(httpServer, origins) {
   io.on("connection", (socket) => {
     socket.join("admin");
   });
+  startAppLive(io);
   console.log("Live refresh (Socket.IO) ready");
   return io;
 }
@@ -98,6 +104,7 @@ export function liveSaves(req, res, next) {
     if (res.statusCode >= 400) return;
     const area = areaOf(req.originalUrl.split("?")[0]);
     if (area) notify(area, { except: req.get("x-socket-id") || undefined });
+    appSaves(req).catch((error) => console.error("App live refresh:", error.message));
   });
   next();
 }

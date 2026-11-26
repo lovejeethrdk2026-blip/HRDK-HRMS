@@ -38,7 +38,7 @@ const SECTION_ICON = {
 export default function Profile() {
   const c = useTheme();
   const { profileEdit } = useFeatures(); // HR can switch fixing details off
-  const { data, error, loading, reload } = useLoad(getProfileDetails, []);
+  const { data, error, loading, reload } = useLoad(getProfileDetails, [], { live: ["profile"] });
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState({});
   const [saving, setSaving] = useState(false);
