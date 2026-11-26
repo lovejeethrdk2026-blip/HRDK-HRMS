@@ -8536,6 +8536,15 @@ button.lv-stat:hover { border-color: var(--border-strong); background: var(--hov
 .msp-table th.msp-stick2 { min-width: 160px; }
 .msp-table td.msp-stick2, .msp-table th.msp-stick2 { text-align: left; }
 .msp-table th.msp-stick1, .msp-table th.msp-stick2 { z-index: 4; }
+/* Phones: Code and Name together (264px) cover most of the screen, so only
+   the Name stays pinned; the Code column scrolls away under it. */
+@media (max-width: 720px) {
+  .msp-table .msp-stick1 { left: auto; min-width: 0; max-width: none; }
+  .msp-table th.msp-stick1 { z-index: 2; }
+  .msp-table .msp-stick2 { left: 0; }
+  .msp-table .msp-stick2 { min-width: 136px; }
+  .msp-table td.msp-stick2 .msp-name { white-space: normal; }
+}
 /* The open row's days stay in view while the table scrolls sideways. */
 .msp-days-row td > div { position: sticky; left: 12px; max-width: calc(100vw - 100px); }
 
@@ -8573,3 +8582,14 @@ button.lv-stat:hover { border-color: var(--border-strong); background: var(--hov
 .al-result-actions { display: flex; gap: 8px; align-items: flex-start; }
 .al-result-table { max-height: 320px; overflow-y: auto; }
 .al-pass { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13.5px; background: var(--hover); padding: 2px 8px; border-radius: 4px; }
+/* Tablets: the ticked count and the three buttons take their own row. */
+@media (max-width: 1100px) {
+  .al-bulk { margin-left: 0; width: 100%; flex-wrap: wrap; }
+  .al-bulk .al-muted { flex-basis: 100%; }
+}
+/* Phones: the three buttons share the row evenly; Generate gets a full row. */
+@media (max-width: 720px) {
+  .al-bulk .btn { flex: 1 1 calc(50% - 5px); justify-content: center; }
+  .al-bulk .btn-primary { flex-basis: 100%; }
+  .al-check { padding-bottom: 0; }
+}
