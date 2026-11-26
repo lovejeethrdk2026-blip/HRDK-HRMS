@@ -137,10 +137,11 @@ export default function MonthShiftPay() {
   const [register, setRegister] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [holidays, setHolidays] = useState([]); // Holidays page, this month's year
-  // Typed % rules; left blank, the standard 75 / 50 is used.
-  const [fullPct, setFullPct] = useState("75");
+  // Typed % rules; left blank, the standard 50 / 50 is used: more than 50% of
+  // the shift = full day (P), exactly 50% = half day (HD), less = absent.
+  const [fullPct, setFullPct] = useState("50");
   const [halfPct, setHalfPct] = useState("50");
-  const fullUsed = Number(fullPct) > 0 ? Number(fullPct) : 75;
+  const fullUsed = Number(fullPct) > 0 ? Number(fullPct) : 50;
   const halfUsed = Number(halfPct) > 0 ? Number(halfPct) : 50;
   const [includeOt, setIncludeOt] = useState(false);
   const [onlyShift, setOnlyShift] = useState(true);
@@ -238,7 +239,7 @@ export default function MonthShiftPay() {
         <div className="field-group">
           <label htmlFor="msp-full">Full day (P) at % of shift</label>
           <div className="msp-pct">
-            <input id="msp-full" type="number" min="1" max="100" placeholder="75" value={fullPct} onChange={(e) => setFullPct(e.target.value)} />
+            <input id="msp-full" type="number" min="1" max="100" placeholder="50" value={fullPct} onChange={(e) => setFullPct(e.target.value)} />
             <span>%</span>
           </div>
         </div>
@@ -273,7 +274,17 @@ export default function MonthShiftPay() {
         <ul>
           <li>Worked hours = completed IN→OUT punch pairs for the day (same as Daily Register "Total working").</li>
           <li>Full day = shift length, less 1 hour lunch when the shift covers 13:00–15:00. No shift on the master = 8 hours.</li>
-          <li>Worked ≥ {fullUsed}% of full day = <b>P</b> (1 day); ≥ {halfUsed}% = <b>HD</b> (½ day); less = <b>A</b>.</li>
+          <li>
+            {fullUsed > halfUsed ? (
+              <>
+                Worked ≥ {fullUsed}% of full day = <b>P</b> (1 day); ≥ {halfUsed}% = <b>HD</b> (½ day); less = <b>A</b>.
+              </>
+            ) : (
+              <>
+                Worked more than {fullUsed}% of full day = <b>P</b> (1 day, full attendance); exactly {halfUsed}% = <b>HD</b> (½ day); less = <b>A</b>.
+              </>
+            )}
+          </li>
           <li>Weekly off (master, Sunday when blank) = <b>WO</b>, paid 1 day. Work on a weekly off is paid extra (WO worked).</li>
           <li>
             Company holiday (Holidays page) = <b>PH</b> (paid holiday, name shown under it), paid 1 day for everyone. Work on a holiday is paid extra (PH+P, Holiday

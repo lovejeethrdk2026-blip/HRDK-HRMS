@@ -8,6 +8,9 @@
 // - Worked >= fullShare of the full day  -> P  (1 day)
 //   Worked >= halfShare of the full day  -> HD (0.5 day)
 //   Less (or no punch)                   -> A  (0 day)
+//   When both shares are the same (the standard 50 / 50), exactly that share
+//   is HD and only more than it is P: over 50% of the shift = full day,
+//   exactly 50% = half day, under 50% = absent.
 // - Approved leave (Leave page) is paid: full leave 1 day, half leave 0.5 day
 //   plus whatever the worked half earns (a day is never more than 1).
 // - Weekly off (master "Weekly off", Sunday when blank) with no work is paid
@@ -88,7 +91,8 @@ function dayResult({ row, shift, weeklyOff, dayName, holiday, fullShare, halfSha
   const worked = row ? totalWorking(doc).seconds : 0;
 
   let workValue = 0;
-  if (worked > 0 && worked >= fullDay * fullShare) workValue = 1;
+  const fullLine = fullDay * fullShare;
+  if (worked > 0 && (worked > fullLine || (worked === fullLine && fullShare > halfShare))) workValue = 1;
   else if (worked > 0 && worked >= fullDay * halfShare) workValue = 0.5;
 
   const leave = row?.leave || null;
@@ -126,9 +130,9 @@ function dayResult({ row, shift, weeklyOff, dayName, holiday, fullShare, halfSha
 
 // rows: Daily Register rows for the month (GET /attendance?view=register).
 // employees: GET /employees (EmployeeProfile documents).
-// month: "YYYY-MM". options: { fullShare, halfShare } as fractions (0.75, 0.5).
+// month: "YYYY-MM". options: { fullShare, halfShare } as fractions (0.5, 0.5).
 // holidays: [{ date: "YYYY-MM-DD", name }] from the Holidays page.
-export function monthShiftPay({ rows, employees, month, holidays = [], fullShare = 0.75, halfShare = 0.5 }) {
+export function monthShiftPay({ rows, employees, month, holidays = [], fullShare = 0.5, halfShare = 0.5 }) {
   const holidayOn = new Map(holidays.map((h) => [h.date, h.name]));
   const [yyyy, mm] = month.split("-");
   const year = Number(yyyy);
