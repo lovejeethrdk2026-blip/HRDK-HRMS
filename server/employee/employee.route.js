@@ -17,7 +17,7 @@ import {
 import { getSalarySheet } from "./salarySheet.js";
 import { MAX_DOCUMENT_BYTES, deleteDocument, getDocument, setDocumentLock, uploadDocument } from "./employeeDocuments.js";
 import { isLoggedIn } from "../middleware/auth.js";
-import { appPasswordStatus, generateAppPasswords, listAppLogins, setAppPassword } from "../portal/appPasswords.js";
+import { appPasswordStatus, generateAppPasswords, listAppLogins, setAppAccess, setAppPassword } from "../portal/appPasswords.js";
 import { monthPayHistory } from "../portal/monthPay.js";
 import { accessFor } from "../roles/roles.controller.js";
 
@@ -44,6 +44,7 @@ router.get("/", listEmployees);
 // passwords for many at once.
 router.get("/app-logins", allowed("employees.add"), listAppLogins);
 router.post("/app-logins/generate", allowed("employees.add"), express.json(), generateAppPasswords);
+router.post("/app-logins/access", allowed("employees.add"), express.json(), setAppAccess);
 // Employees page > Download salary sheet: pay by Daily Register days, ?month=YYYY-MM.
 router.get("/salary-sheet", getSalarySheet);
 // Add Employee page.

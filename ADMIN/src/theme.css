@@ -8567,6 +8567,7 @@ button.lv-stat:hover { border-color: var(--border-strong); background: var(--hov
 .al-own { background: var(--good-soft); color: var(--good); }
 .al-noid { background: var(--bad-soft); color: var(--bad); }
 .al-one { padding: 4px 10px; font-size: 12.5px; }
+.al-row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .al-result { padding: 16px 18px; margin-bottom: 14px; border-color: var(--teal); }
 .al-result-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
 .al-result-actions { display: flex; gap: 8px; align-items: flex-start; }

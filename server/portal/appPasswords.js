@@ -2,12 +2,18 @@ import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import EmployeeProfile from "../employee/models/EmployeeProfile.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { isWorkingOn, openExitOf } from "../utils/salaryFormulas.js";
 
 // Employee app passwords. Username = the Employee ID the employee punches
 // with (Matrix / COSEC ID, EmployeeProfile.initialsNo). HR sets a first
 // password on the Employees panel; on the first login with it the app makes
 // the employee choose their own. Only bcrypt hashes are stored
 // (collection app_passwords, _id = Employee ID).
+//
+// HR can turn an employee's app login off (field disabled: true; such a
+// document may have no hash). An employee whose exit has passed (left the
+// company) is blocked too, without HR doing anything. Both stop a new login
+// and every request of an app already logged in (me.controller.js).
 //
 // An employee with no password yet can still log in with the ID alone while
 // EMP_APP_ID_LOGIN=1 (server .env); remove that to require passwords for all.
@@ -27,10 +33,30 @@ function checkNew(password) {
   return "";
 }
 
+// Today as "YYYY-MM-DD" on the server clock.
+function today() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+// Left the company: an exit with no rejoin, last working day already past.
+export const hasLeft = (profile) => Boolean(profile && openExitOf(profile) && !isWorkingOn(profile, today()));
+
+// Why this Employee ID may not use the app now, or "".
+export async function loginBlock(id) {
+  const saved = await passwordOf(id);
+  if (saved?.disabled) return "Your app login is turned off. Ask HR.";
+  const profile = await EmployeeProfile.findOne({ initialsNo: String(id) }, { exits: 1, joiningDate: 1 }).lean();
+  if (hasLeft(profile)) return "You have left the company, so the app login is closed.";
+  return "";
+}
+
 // Login check. Returns "" when the login may go ahead, else the message to show.
 export async function checkLogin(id, password) {
+  const blocked = await loginBlock(id);
+  if (blocked) return blocked;
   const saved = await passwordOf(id);
-  if (!saved) {
+  if (!saved?.hash) {
     if (process.env.EMP_APP_ID_LOGIN === "1") return "";
     return "HR has not set your app password yet. Ask HR.";
   }
@@ -62,7 +88,7 @@ export const changeMyPassword = asyncHandler(async (req, res) => {
   const problem = checkNew(next);
   if (problem) return res.status(400).json({ message: problem });
   const saved = await passwordOf(id);
-  if (saved) {
+  if (saved?.hash) {
     if (!(await bcrypt.compare(String(req.body?.current ?? ""), saved.hash))) {
       return res.status(400).json({ message: "Current password is wrong" });
     }
@@ -101,7 +127,8 @@ export const appPasswordStatus = asyncHandler(async (req, res) => {
   const saved = await passwordOf(id);
   res.json({
     username: id,
-    set: Boolean(saved),
+    set: Boolean(saved?.hash),
+    disabled: Boolean(saved?.disabled),
     mustChange: Boolean(saved?.mustChange),
     setAt: saved?.setAt || null,
     changedAt: saved?.changedAt || null
@@ -136,7 +163,7 @@ export const setAppPassword = asyncHandler(async (req, res) => {
 const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
 const generatePassword = () => Array.from(crypto.getRandomValues(new Uint32Array(8)), (n) => CHARS[n % CHARS.length]).join("");
 
-// GET /api/employees/app-logins -> [{ username, mustChange, setAt, changedAt, pausedUntil }]
+// GET /api/employees/app-logins -> [{ username, hasPassword, mustChange, setAt, changedAt, pausedUntil, disabled, disabledAt }]
 // Every saved app password (no hashes); the page joins them to the employees.
 export const listAppLogins = asyncHandler(async (req, res) => {
   const rows = await passwords()
@@ -145,12 +172,52 @@ export const listAppLogins = asyncHandler(async (req, res) => {
   res.json(
     rows.map((r) => ({
       username: r._id,
+      hasPassword: Boolean(r.hash),
+      disabled: Boolean(r.disabled),
+      disabledAt: r.disabledAt || null,
       mustChange: Boolean(r.mustChange),
       setAt: r.setAt || null,
       changedAt: r.changedAt || null,
       pausedUntil: r.pausedUntil && r.pausedUntil > new Date() ? r.pausedUntil : null
     }))
   );
+});
+
+// POST /api/employees/app-logins/access { employeeIds: [...], disabled: true|false }
+// -> { changed: [employeeId], skipped: [{ employeeId, reason }] }
+// Turn the app login off (logged out of the app at once) or back on. The
+// password is kept, so turning it on again needs no new password.
+export const setAppAccess = asyncHandler(async (req, res) => {
+  const ids = [...new Set((Array.isArray(req.body?.employeeIds) ? req.body.employeeIds : []).map(String))];
+  if (!ids.length) return res.status(400).json({ message: "Choose at least one employee" });
+  if (ids.length > 2000) return res.status(400).json({ message: "At most 2000 at a time" });
+  const disabled = req.body?.disabled === true;
+  const employees = await EmployeeProfile.find({ employeeId: { $in: ids } }, { employeeId: 1, initialsNo: 1 }).lean();
+  const byId = new Map(employees.map((e) => [e.employeeId, e]));
+  const changed = [];
+  const skipped = [];
+  const now = new Date();
+  for (const employeeId of ids) {
+    const username = String(byId.get(employeeId)?.initialsNo || "").trim();
+    if (!/^\d{1,10}$/.test(username)) {
+      skipped.push({ employeeId, reason: byId.has(employeeId) ? "No Employee ID (Matrix ID)" : "Not found" });
+      continue;
+    }
+    if (disabled) {
+      await passwords().updateOne(
+        { _id: username },
+        { $set: { disabled: true, disabledAt: now, disabledBy: req.session?.userId || "" } },
+        { upsert: true }
+      );
+      await sessions().deleteMany({ employeeId: username });
+    } else {
+      await passwords().updateOne({ _id: username }, { $unset: { disabled: "", disabledAt: "", disabledBy: "" } });
+      // A document that only held the "off" switch has nothing left.
+      await passwords().deleteOne({ _id: username, hash: { $exists: false } });
+    }
+    changed.push(employeeId);
+  }
+  res.json({ changed, skipped });
 });
 
 // POST /api/employees/app-logins/generate { employeeIds: [...] }

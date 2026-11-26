@@ -14,7 +14,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { appFeatures } from "../appSettings/appSettings.route.js";
 import * as stats from "../../ADMIN/src/utils/attendanceStats.js";
 import { buildPayslipPdf } from "./payslipPdf.js";
-import { checkLogin, passwordOf } from "./appPasswords.js";
+import { checkLogin, loginBlock, passwordOf } from "./appPasswords.js";
 import { sendDocument } from "../employee/employeeDocuments.js";
 
 // The employee app (HRDK-EMP-APP): every route works on the logged-in
@@ -79,7 +79,7 @@ async function employeeFor(id) {
     active: master.isActive !== false && !master.leavingDate,
     // App login: hasPassword false = ID-only so far; mustChangePassword true =
     // still on the password HR gave, the app asks for a new one first.
-    hasPassword: Boolean(password),
+    hasPassword: Boolean(password?.hash),
     mustChangePassword: Boolean(password?.mustChange),
     // What HR lets the app show (Employee App settings).
     features: await appFeatures()
@@ -92,6 +92,12 @@ export const requireEmployee = handle(async (req, res, next) => {
   if (!token) fail(401, "Please log in");
   const session = await sessions().findOne({ _id: hash(token) });
   if (!session || session.expiresAt < new Date()) fail(401, "Please log in again");
+  // Login turned off by HR, or left the company: out of the app at once.
+  const blocked = await loginBlock(session.employeeId);
+  if (blocked) {
+    await sessions().deleteMany({ employeeId: session.employeeId });
+    fail(401, blocked);
+  }
   req.employeeId = session.employeeId;
   next();
 });
