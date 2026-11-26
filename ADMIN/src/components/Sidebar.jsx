@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "../api/axios";
 import Brand from "./Brand";
+import { useLive } from "../api/live";
 
 // Simple line icons (24x24 viewBox), stroked with currentColor.
 const ICONS = {
@@ -182,6 +183,10 @@ export function StatusStrip({ className = "sidebar-status" }) {
     return () => clearInterval(tick);
   }, []);
 
+  // The sync just wrote punches: show the fresh "Synced ..." at once.
+  const [syncTick, setSyncTick] = useState(0);
+  useLive(["attendance"], () => setSyncTick((t) => t + 1));
+
   useEffect(() => {
     let cancelled = false;
     const load = () =>
@@ -195,7 +200,7 @@ export function StatusStrip({ className = "sidebar-status" }) {
       cancelled = true;
       clearInterval(poll);
     };
-  }, []);
+  }, [syncTick]);
 
   // Stale once it has missed two scheduled runs, or if the last run errored.
   const staleAfterMs = ((sync?.intervalMinutes || 5) * 2 + 1) * 60000;

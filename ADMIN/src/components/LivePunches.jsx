@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "../api/axios";
+import { useLive } from "../api/live";
 
 // Dashboard > Today's punches: every IN and OUT punched today, newest first,
 // with employee ID, name and department, and who is in or out right now. Read
@@ -38,6 +39,10 @@ export default function LivePunches() {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
 
+  // New punches from the COSEC sync: reload at once (live refresh).
+  const [tick, setTick] = useState(0);
+  useLive(["attendance"], () => setTick((t) => t + 1));
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -57,7 +62,7 @@ export default function LivePunches() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, []);
+  }, [tick]);
 
   // Every punch of the day, newest first, with whether its employee is in now
   // (their last punch an IN) or out.

@@ -1,5 +1,6 @@
 import Attendance from "./models/Attendance.js";
 import { applyAttendanceChange, clearAttendanceCache } from "./attendanceCache.js";
+import { notify } from "../live/live.js";
 
 const PAIR_KEY = /^pair(\d+)$/;
 
@@ -58,6 +59,9 @@ function startAttendanceWatcher() {
 
   stream.on("change", (change) => {
     applyAttendanceChange(change);
+    // Open Daily Register / Dashboard pages reload (a few seconds later, once
+    // for a whole burst of sync writes).
+    notify("attendance");
     if (change.operationType !== "delete") logIfChanged(change.fullDocument);
   });
 

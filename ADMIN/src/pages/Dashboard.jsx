@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { isActive } from "../utils/employeeStatus";
 import LivePunches from "../components/LivePunches";
 import { inMyDepartments, myDepartmentNames, myRegisterNames } from "../utils/userScope";
+import { useLive } from "../api/live";
 
 // Fetched while the head count loads, so both arrive together.
 const loadChart = () => import("../components/AttendanceAreaChart");
@@ -50,6 +51,8 @@ function AttendanceChart() {
 
   // The days may cross 1 April, so ask for every financial year they touch.
   const years = [...new Set(days.map(fyOf))].join(",");
+  const [tick, setTick] = useState(0);
+  useLive(["attendance"], () => setTick((t) => t + 1));
   useEffect(() => {
     loadChart();
     let cancelled = false;
@@ -60,7 +63,7 @@ function AttendanceChart() {
     return () => {
       cancelled = true;
     };
-  }, [years]);
+  }, [years, tick]);
 
   const rows = days.map((day) => {
     const date = ddmmyyyy(day);
@@ -115,6 +118,8 @@ export default function Dashboard() {
   const [employees, setEmployees] = useState(null);
   const [error, setError] = useState("");
 
+  const [tick, setTick] = useState(0);
+  useLive(["employees"], () => setTick((t) => t + 1));
   useEffect(() => {
     let cancelled = false;
     api
@@ -124,7 +129,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [tick]);
 
   // "Their department" roles count only employees of the user's own department.
   // Those who have left (Inactive on the Employees page) are not counted.

@@ -4,6 +4,7 @@ import { useConfirm } from "../components/ConfirmDialog";
 import Loader from "../components/Loader";
 import { isActive } from "../utils/employeeStatus";
 import { XLSX, loadXlsx } from "../utils/xlsx";
+import { useLive } from "../api/live";
 
 // Employees > App logins: every employee's employee-app login in one list.
 // Username = the Employee ID they punch with (Matrix ID, initialsNo). HR ticks
@@ -60,6 +61,9 @@ export default function AppLogins() {
   useEffect(() => {
     load();
   }, []);
+  // Live refresh: an employee set their own password, or another HR user
+  // changed logins.
+  useLive(["employees"], () => load());
 
   const rows = useMemo(() => {
     const byUser = new Map(logins.map((l) => [l.username, l]));

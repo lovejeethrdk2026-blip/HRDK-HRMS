@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import Loader from "../components/Loader";
 import { useConfirm } from "../components/ConfirmDialog";
 import { isActive } from "../utils/employeeStatus";
+import { useLive } from "../api/live";
 
 // Department tab: one card per department from GET /api/departments
 // (server/department/department.controller.js), added on this page with
@@ -127,6 +128,7 @@ export default function Departments() {
       setError(err.response?.data?.message || err.message);
     }
   }
+  useLive(["departments"], () => load());
 
   useEffect(() => {
     load();

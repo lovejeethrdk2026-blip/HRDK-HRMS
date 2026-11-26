@@ -4,6 +4,7 @@ import Loader from "./components/Loader";
 import Sidebar from "./components/Sidebar";
 import TopNav from "./components/TopNav";
 import Login from "./pages/Login";
+import { connectLive, disconnectLive } from "./api/live";
 
 // Each page's code is fetched on its own, so the first screen does not wait
 // for every page (and the Excel / PowerPoint libraries). pageCode() keeps the
@@ -145,6 +146,13 @@ export default function App() {
     handle = idle(next);
     return () => cancel(handle);
   }, [user]);
+  // Live refresh socket while someone is logged in (api/live.js).
+  useEffect(() => {
+    if (!user) return undefined;
+    connectLive();
+    return () => disconnectLive();
+  }, [user?._id ?? user?.username]);
+
   if (checking) return <Loader text="Loading…" />;
   if (!user) return <Login />;
 

@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 import { existsSync } from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
@@ -30,6 +31,7 @@ import chatRoutes from "./chat/chat.route.js";
 import shiftRoutes from "./shifts/shifts.route.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 import { trackLastSeen } from "./middleware/lastSeen.js";
+import { liveSaves, startLive } from "./live/live.js";
 
 const app = express();
 
@@ -52,6 +54,8 @@ app.use(express.json());
 app.use(sessionMiddleware);
 // Users page green dot: when each logged-in user was last active.
 app.use(trackLastSeen);
+// Saves tell open admin pages to reload (live/live.js, Socket.IO).
+app.use(liveSaves);
 
 app.use("/api/users", userRoutes);
 app.use("/api/roles", roleRoutes);
@@ -107,7 +111,10 @@ connectDB()
     // Current year's Pay Sheets fetched ahead, so the pages open at once.
     startPaySheetWarmup();
 
-    app.listen(PORT, () => {
+    // One HTTP server for the API and the live-refresh socket (live/live.js).
+    const server = http.createServer(app);
+    startLive(server, adminOrigins);
+    server.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
   })

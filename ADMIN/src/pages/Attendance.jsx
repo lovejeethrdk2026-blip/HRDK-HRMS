@@ -6,6 +6,7 @@ import HeadCount from "../components/HeadCount";
 import Loader from "../components/Loader";
 import NightShiftDialog from "../components/NightShiftDialog";
 import { exportAttendanceToExcel } from "../utils/exportAttendance";
+import { useLive } from "../api/live";
 
 function formatDateTime(timestamp) {
   return new Date(timestamp)
@@ -90,8 +91,8 @@ export default function Attendance({ view = "detail", onNavigate }) {
 
   // filters: optional override so Reset can fetch with cleared values in the
   // same action, without waiting on the setState/closure round-trip.
-  async function fetchDetail(targetPage = 1, filters = {}) {
-    setLoading(true);
+  async function fetchDetail(targetPage = 1, filters = {}, silent = false) {
+    if (!silent) setLoading(true);
     setError("");
 
     const effectiveEmployeeId = filters.employeeId ?? employeeId;
@@ -120,7 +121,7 @@ export default function Attendance({ view = "detail", onNavigate }) {
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
@@ -214,6 +215,15 @@ export default function Attendance({ view = "detail", onNavigate }) {
   useEffect(() => {
     loadSyncStatus();
   }, []);
+
+  // Live refresh: new punches (COSEC sync) or a save by someone else -> the
+  // open view reloads quietly, with the filters as they are.
+  useLive(["attendance", "leave", "holidays"], () => {
+    loadSyncStatus();
+    if (mode === "headcount") return; // HeadCount listens itself
+    if (mode === "latest") fetchLatest(true);
+    else fetchDetail(1, {}, true);
+  });
 
   // Open on the newest day that has records when today has none yet.
   useEffect(() => {

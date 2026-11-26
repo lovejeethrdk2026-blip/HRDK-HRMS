@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import api from "../api/axios";
 import Loader from "../components/Loader";
+import { useLive } from "../api/live";
 
 // Messages: chats with employees from the HRDK app. HR / admin see every
 // employee; a manager login sees only employees whose Reporting manager is the
@@ -53,6 +54,12 @@ export default function Messages() {
       setError(err.response?.data?.message || err.message);
     }
   }
+
+  // Live refresh: a new message from the app shows at once.
+  useLive(["chat"], () => {
+    loadThreads();
+    if (openId) loadThread(openId);
+  });
 
   useEffect(() => {
     loadThreads();

@@ -16,7 +16,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:3030"
+      "/api": "http://localhost:3030",
+      // Live refresh socket (server/live/live.js)
+      "/socket.io": { target: "http://localhost:3030", ws: true }
     },
     // Let the dev server serve those two files from outside ADMIN.
     fs: { allow: [".", salaryFormulas, payFormula] }

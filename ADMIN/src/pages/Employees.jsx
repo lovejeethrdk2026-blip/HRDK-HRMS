@@ -25,6 +25,7 @@ import { statusOf } from "../utils/employeeStatus";
 import { firstPayVersion, openExitOf, payVersionIds, stateHistoryOf } from "@salary";
 import AddEmployee from "./AddEmployee";
 import { inMyDepartments, myDepartmentNames } from "../utils/userScope";
+import { useLive } from "../api/live";
 
 // Employees tab: one card per employee saved on Add Employee, newest first,
 // from GET /api/employees (server/employee/employee.controller.js).
@@ -847,6 +848,9 @@ export default function Employees({ onNavigate }) {
       setError(err.response?.data?.message || err.message);
     }
   }
+  // Live refresh: another HR user saved, or an employee changed their
+  // details / documents in the app.
+  useLive(["employees", "departments"], () => load());
 
   useEffect(() => {
     load();

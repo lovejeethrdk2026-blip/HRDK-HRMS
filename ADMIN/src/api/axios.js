@@ -15,9 +15,24 @@ const api = axios.create({
 // answer instead of waiting on the database again, and two pages asking at
 // once share one request. Any save (POST / PUT / PATCH / DELETE) empties the
 // cache, so a page reloading after its own save always gets fresh data.
+// Live refresh (api/live.js) sets where the open socket's id comes from; it
+// goes with every request so the server does not tell this tab about its own
+// saves.
+let socketIdOf = () => undefined;
+export const setLiveSocketId = (fn) => {
+  socketIdOf = fn;
+};
+api.interceptors.request.use((config) => {
+  const id = socketIdOf();
+  if (id) config.headers["X-Socket-Id"] = id;
+  return config;
+});
+
 const CACHED = [/^\/employees$/, /^\/departments$/, /^\/holidays$/, /^\/leave\/types$/, /^\/roles$/];
 const TTL_MS = 60 * 1000;
 const cache = new Map(); // url -> { at, promise }
+// Live refresh: another user or the sync changed something, read it fresh.
+export const clearApiCache = () => cache.clear();
 const send = axios.getAdapter(api.defaults.adapter);
 
 api.defaults.adapter = (config) => {

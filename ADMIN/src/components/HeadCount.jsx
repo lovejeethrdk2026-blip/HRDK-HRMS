@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { XLSX, loadXlsx } from "../utils/xlsx";
 import api from "../api/axios";
 import Loader from "./Loader";
+import { useLive } from "../api/live";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -53,8 +54,8 @@ export default function HeadCount() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function load(year = fy) {
-    setLoading(true);
+  async function load(year = fy, silent = false) {
+    if (!silent) setLoading(true);
     setError("");
     try {
       const { data } = await api.get("/attendance/headcount", { params: { fy: year } });
@@ -62,9 +63,11 @@ export default function HeadCount() {
     } catch (err) {
       setError(err.response?.data?.message || err.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
+  // Live refresh: new punches change today's count.
+  useLive(["attendance", "employees"], () => load(fy, true));
 
   useEffect(() => {
     load(fy);

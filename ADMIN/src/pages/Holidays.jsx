@@ -3,6 +3,7 @@ import api from "../api/axios";
 import { useAuth } from "../auth/AuthContext";
 import { useConfirm } from "../components/ConfirmDialog";
 import Loader from "../components/Loader";
+import { useLive } from "../api/live";
 
 // Holidays: company holidays (Diwali, Holi, 15 August ...), one paid day off
 // for every employee. Month Shift Register & Pay pays them like a weekly off
@@ -44,6 +45,7 @@ export default function Holidays() {
     load(year);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year]);
+  useLive(["holidays"], () => load(year));
 
   async function add(e) {
     e.preventDefault();

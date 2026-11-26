@@ -3,6 +3,7 @@ import api from "../api/axios";
 import { useAuth } from "../auth/AuthContext";
 import { useConfirm } from "../components/ConfirmDialog";
 import Loader from "../components/Loader";
+import { useLive } from "../api/live";
 
 // Leave: apply leave for an employee, approve / reject / cancel it, see each
 // employee's balance per financial year (April to March) and set up the leave
@@ -119,6 +120,13 @@ export default function Leave() {
       setError(errorText(err));
     }
   }
+
+  // Live refresh: an employee applied / cancelled in the app, or another HR
+  // user approved.
+  useLive(["leave"], () => {
+    loadApps();
+    loadTypes().catch(() => {});
+  });
 
   useEffect(() => {
     loadTypes().catch((err) => setError(errorText(err)));
@@ -631,6 +639,7 @@ function Balances({ employees, can }) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fy]);
+  useLive(["leave", "employees"], () => load());
 
   const departments = [...new Set(employees.map((e) => e.department).filter(Boolean))].sort();
   const q = search.trim().toLowerCase();
