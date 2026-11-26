@@ -9,6 +9,7 @@ import {
   leave,
   login,
   logout,
+  refresh,
   payslip,
   payslipPdf,
   payslipPdfLink,
@@ -27,6 +28,7 @@ import { changeMyPassword } from "./appPasswords.js";
 const router = express.Router();
 
 router.post("/auth/login", login);
+router.post("/auth/refresh", refresh); // { refreshToken } -> new key pair
 router.post("/auth/logout", logout);
 // Payslip PDF opened in the phone's browser: the signed 10-minute link from
 // /payslips/:month/pdf-link stands in for the login key.

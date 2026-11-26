@@ -21,7 +21,13 @@ export async function connectLive() {
   if (socket || DEMO || !API_URL) return;
   const token = await tokens.get();
   if (!token) return;
-  socket = io(`${API_URL}/app`, { auth: { token }, transports: ["websocket"] });
+  // auth as a function: every (re)connect sends the newest login key, which
+  // changes each day when the app swaps its keys (client.js renew).
+  let sentToken = token;
+  socket = io(`${API_URL}/app`, {
+    auth: (cb) => tokens.get().then((t) => cb({ token: (sentToken = t || "") })),
+    transports: ["websocket"]
+  });
   let wasConnected = false;
   socket.on("connect", () => {
     // Back after a drop (phone asleep, no network, server restarted):
@@ -30,10 +36,17 @@ export async function connectLive() {
     wasConnected = true;
   });
   socket.on("changed", ({ area }) => listeners.forEach((l) => l.areas.has(area) && l.run()));
-  // Key no longer good (logged out elsewhere, login turned off): the account
-  // listener asks the server, which sends the app back to Login.
+  // Key no longer good: the account listener asks the server. An old access
+  // key gets swapped for a new pair there (then we connect again with it); a
+  // login that is over (logged out, turned off) sends the app back to Login.
   socket.on("connect_error", (error) => {
-    if (/log in/i.test(error?.message || "")) listeners.forEach((l) => l.areas.has("account") && l.run());
+    if (!/log in/i.test(error?.message || "")) return;
+    const failed = sentToken;
+    listeners.forEach((l) => l.areas.has("account") && l.run());
+    setTimeout(async () => {
+      const now = await tokens.get();
+      if (socket && !socket.connected && now && now !== failed) socket.connect();
+    }, 3000);
   });
 }
 

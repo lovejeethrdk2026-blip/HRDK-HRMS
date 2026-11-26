@@ -9,6 +9,7 @@ import { api, apiUpload, tokens } from "./client";
 //   POST /me/auth/login       { employeeId, password, device } -> { accessToken, refreshToken, employee }
 //                             (employee.mustChangePassword: still on HR's first password)
 //   POST /me/password         { current, next }
+//   POST /me/auth/refresh     { refreshToken } -> { accessToken, refreshToken }  (client.js, on 401)
 //   POST /me/auth/logout
 //   GET  /me/profile                                         -> employee
 //   GET  /me/attendance?month=YYYY-MM                        -> { month, shift, days: [...] }

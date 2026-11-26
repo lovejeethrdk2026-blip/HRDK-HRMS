@@ -26,9 +26,38 @@ import { sendDocument } from "../employee/employeeDocuments.js";
 // OTP / password login is set up. Anyone who knows an ID can then log in as
 // that employee, so keep it to the office network.
 
-const SESSION_DAYS = 30;
+// Login keys. Login gives two random keys:
+//   access key   sent on every call (Authorization: Bearer), good for ACCESS_HOURS
+//   refresh key  only sent to /auth/refresh, good for REFRESH_DAYS; swaps both
+//                keys for new ones, so an employee who opens the app at least
+//                once every REFRESH_DAYS stays logged in.
+// Only SHA-256 hashes are saved (app_sessions: _id = access hash, refreshHash),
+// so a copy of the database gives no working key. A refresh key works once: an
+// old one used again (copied key) ends that login.
+const ACCESS_HOURS = 24;
+const REFRESH_DAYS = 30;
 const sessions = () => mongoose.connection.collection("app_sessions");
 const hash = (token) => crypto.createHash("sha256").update(token).digest("hex");
+const newKey = () => crypto.randomBytes(32).toString("hex");
+
+// A fresh key pair saved for this login (device kept from the first login).
+async function issueKeys(employeeId, device, createdAt = new Date(), previousRefreshHash = null) {
+  const accessToken = newKey();
+  const refreshToken = newKey();
+  const now = Date.now();
+  await sessions().insertOne({
+    _id: hash(accessToken),
+    refreshHash: hash(refreshToken),
+    ...(previousRefreshHash && { previousRefreshHash }),
+    employeeId,
+    device: device || {},
+    createdAt,
+    refreshedAt: new Date(now),
+    expiresAt: new Date(now + ACCESS_HOURS * 3600000),
+    refreshExpiresAt: new Date(now + REFRESH_DAYS * 86400000)
+  });
+  return { accessToken, refreshToken };
+}
 const pad = (n) => String(n).padStart(2, "0");
 
 class HttpError extends Error {
@@ -123,16 +152,38 @@ export const login = handle(async (req, res) => {
   if (!employee || !employee.active) fail(404, "No active employee with this ID");
   const problem = await checkLogin(id, req.body?.password);
   if (problem) fail(401, problem);
-  const token = crypto.randomBytes(32).toString("hex");
+  const keys = await issueKeys(id, req.body?.device);
+  res.json({ ...keys, employee });
+});
+
+// POST /api/me/auth/refresh { refreshToken } -> { accessToken, refreshToken }
+// Swaps the keys: the old pair stops working, the new pair is good for
+// ACCESS_HOURS / REFRESH_DAYS from now. Login turned off or left the company:
+// no new keys.
+export const refresh = handle(async (req, res) => {
+  const token = String(req.body?.refreshToken ?? "");
+  if (!token) fail(401, "Please log in again");
+  const tokenHash = hash(token);
   const now = new Date();
-  await sessions().insertOne({
-    _id: hash(token),
-    employeeId: id,
-    device: req.body?.device || {},
-    createdAt: now,
-    expiresAt: new Date(now.getTime() + SESSION_DAYS * 86400000)
-  });
-  res.json({ accessToken: token, refreshToken: token, employee });
+
+  let session = await sessions().findOneAndDelete({ refreshHash: tokenHash });
+  if (!session) {
+    // A refresh key that was already swapped: someone kept a copy. End that login.
+    const reused = await sessions().findOneAndDelete({ previousRefreshHash: tokenHash });
+    if (reused) fail(401, "Please log in again");
+    // Logins made before refresh keys (refresh key = access key, 30 days):
+    // allowed once, then they move to the new keys.
+    session = await sessions().findOneAndDelete({ _id: tokenHash, refreshHash: { $exists: false } });
+    if (session) session.refreshExpiresAt = session.expiresAt;
+  }
+  if (!session || !(session.refreshExpiresAt > now)) fail(401, "Please log in again");
+
+  const blocked = await loginBlock(session.employeeId);
+  if (blocked) {
+    await sessions().deleteMany({ employeeId: session.employeeId });
+    fail(401, blocked);
+  }
+  res.json(await issueKeys(session.employeeId, session.device, session.createdAt || now, tokenHash));
 });
 
 // POST /api/me/auth/logout
